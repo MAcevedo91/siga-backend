@@ -1,0 +1,39 @@
+{
+  "name": "siga-backend",
+  "version": "1.0.0",
+  "description": "1. Clonar el repo: `git clone https://github.com/MAcevedo91/siga-backend.git` 2. Instalar dependencias: `npm install` 3. Copiar `.env.example` a `.env` y pedir credenciales de Supabase al administrador. 4. Levantar servidor: `npm run dev` ..",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "lint": "eslint src/**/*.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MAcevedo91/siga-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MAcevedo91/siga-backend/issues"
+  },
+  "homepage": "https://github.com/MAcevedo91/siga-backend#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.2.0",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.4.1",
+    "nodemon": "^3.1.14"
+  }
+}
