@@ -6,3 +6,5 @@
 3. Copiar `.env.example` a `.env` y pedir credenciales de Supabase al administrador.
 4. Levantar servidor: `npm run dev`
 ..
+
+supabase pass: N65zaLYalGMGi4Yk
