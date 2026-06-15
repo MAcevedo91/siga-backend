@@ -117,6 +117,23 @@ const login = async (email, password) => {
   await resetearIntentos(usuario.id)
   const token = generarToken(usuario)
 
+  // Auditar login exitoso (fire-and-forget)
+  setImmediate(async () => {
+    try {
+      await supabase.from('auditoria').insert({
+        tenant_id:      usuario.tenant_id,
+        usuario_id:     usuario.id,
+        accion:         'LOGIN',
+        tabla_afectada: 'usuarios',
+        registro_id:    usuario.id,
+        detalle:        { email: usuario.email },
+        ip:             null, // IP no disponible en el servicio, se puede pasar como parámetro futuro
+      })
+    } catch (err) {
+      console.error('[AUDIT] Error al registrar LOGIN:', err.message)
+    }
+  })
+
   return {
     token,
     user: {

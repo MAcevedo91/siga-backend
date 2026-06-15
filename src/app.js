@@ -2,7 +2,8 @@ const express = require('express')
 const cors    = require('cors')
 const helmet  = require('helmet')
 
-const routes  = require('./routes')
+const routes     = require('./routes')
+const auditLogger = require('./middlewares/auditLogger')
 
 const app = express()
 
@@ -38,6 +39,10 @@ app.use(cors({
 
 // Parseo de JSON en el body de los requests
 app.use(express.json())
+
+// Auditoría — debe ir después de express.json() para leer el body
+// y después de las rutas lo captura via res.json()
+app.use(auditLogger)
 
 // =============================================================================
 // RUTAS
