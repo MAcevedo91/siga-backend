@@ -12,8 +12,8 @@ router.get('/health', (req, res) => {
   })
 })
 
-// --- Módulos (se agregan en sprints posteriores) ---
-// router.use('/auth',       require('./auth.routes'))
+// --- Módulos ---
+router.use('/auth', require('./auth.routes'))
 // router.use('/incidentes', require('./incidentes.routes'))
 
 module.exports = router

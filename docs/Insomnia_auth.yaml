@@ -1,0 +1,173 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: auth
+meta:
+  id: wrk_b09205e88464414391116c8e0daf4689
+  created: 1781544260229
+  modified: 1781546054509
+  description: ""
+collection:
+  - url: http://localhost:3000/api/v1/auth/login
+    name: auth
+    meta:
+      id: req_90607f9e4248488aa1afbf81591eb81d
+      created: 1781544260282
+      modified: 1781546434097
+      isPrivate: false
+      description: ""
+      sortKey: -1781544260282
+    method: POST
+    body:
+      mimeType: application/json
+      text: |-
+        {
+          "email": "admin@sigaescolar.cl",
+          "password": "Admin1234!"
+        }
+    headers:
+      - name: Content-Type
+        value: application/json
+      - name: User-Agent
+        value: insomnia/12.6.0
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/auth/me
+    name: auth me
+    meta:
+      id: req_00a2eb5c8c3a4a75a4a2da8f0ebbd42e
+      created: 1781546065308
+      modified: 1781546364002
+      isPrivate: false
+      description: ""
+      sortKey: -1781546065308
+    method: GET
+    headers:
+      - name: User-Agent
+        value: insomnia/12.6.0
+        description: ""
+        disabled: false
+      - name: Authorization
+        value: Bearer
+          eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNWQ2YjY1NmEtZTNhMC00OWZkLWFkOWUtYzkwZjVkZjEyYmZmIiwidGVuYW50X2lkIjoiMWVhNTIzMmMtMzYzMS00MjcxLTk5MGMtOGI0YmY0ZDkzZGI2Iiwicm9sIjoiQWRtaW5pc3RyYWRvciIsImVtYWlsIjoiYWRtaW5Ac2lnYWVzY29sYXIuY2wiLCJpYXQiOjE3ODE1NDQ0MDMsImV4cCI6MTc4MTU3MzIwM30.6hC0W2b0w8izihTwMqaENrYceYLiFrqRbrecEXhLbHI
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/auth/login
+    name: auth fail
+    meta:
+      id: req_7582e94542074315accc64b5de9d5cf2
+      created: 1781546600589
+      modified: 1781546658887
+      isPrivate: false
+      description: ""
+      sortKey: -1781546600589
+    method: POST
+    body:
+      mimeType: application/json
+      text: |-
+        { 
+        	"email": "admin@sigaescolar.cl", 
+         "password": "wrongpassword" 
+        }
+    headers:
+      - name: Content-Type
+        value: application/json
+      - name: User-Agent
+        value: insomnia/12.6.0
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/auth/login
+    name: auth lock
+    meta:
+      id: req_5020b8fe744e4ea29098cec622a46a14
+      created: 1781546762343
+      modified: 1781546806570
+      isPrivate: false
+      description: ""
+      sortKey: -1781546762343
+    method: POST
+    body:
+      mimeType: application/json
+      text: |-
+        { 
+        	"email": "admin@sigaescolar.cl", 
+        	"password": "Admin1234!" 
+        }
+    headers:
+      - name: Content-Type
+        value: application/json
+      - name: User-Agent
+        value: insomnia/12.6.0
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/auth/me
+    name: auth me fail
+    meta:
+      id: req_903001bdb5174cfea666f7c1b8ff4621
+      created: 1781546826656
+      modified: 1781546869412
+      isPrivate: false
+      description: ""
+      sortKey: -1781546826656
+    method: GET
+    headers:
+      - name: User-Agent
+        value: insomnia/12.6.0
+        description: ""
+        disabled: false
+      - name: Authorization
+        value: Bearer tokeninvalido123
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_ffd5a0478bcbb7b3f5ce12a78ec852912f6dabbe
+    created: 1781544260231
+    modified: 1781544260231
+environments:
+  name: Base Environment
+  meta:
+    id: env_ffd5a0478bcbb7b3f5ce12a78ec852912f6dabbe
+    created: 1781544260230
+    modified: 1781544260230
+    isPrivate: false
