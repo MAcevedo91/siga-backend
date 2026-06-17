@@ -1,19 +1,16 @@
 const { Router } = require('express')
 const router = Router()
 
-// Health check — no requiere autenticación
-router.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Servidor operativo',
-    data: {
-      timestamp: new Date().toISOString(),
-    },
-  })
-})
+// =============================================================================
+// RUTAS PRIVADAS — todas requieren token válido y tenant_id
+// (authenticateToken y setTenantContext se aplican globalmente en app.js)
+// =============================================================================
 
-// --- Módulos ---
-router.use('/auth', require('./auth.routes'))
+// --- Módulos (se agregan por sprint) ---
+// router.use('/usuarios',   require('./usuarios.routes'))
+// router.use('/estudiantes', require('./estudiantes.routes'))
 // router.use('/incidentes', require('./incidentes.routes'))
+// router.use('/protocolos', require('./protocolos.routes'))
+// router.use('/dashboard',  require('./dashboard.routes'))
 
 module.exports = router

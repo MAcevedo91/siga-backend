@@ -2,8 +2,10 @@ const express = require('express')
 const cors    = require('cors')
 const helmet  = require('helmet')
 
-const routes     = require('./routes')
-const auditLogger = require('./middlewares/auditLogger')
+const routes           = require('./routes')
+const auditLogger      = require('./middlewares/auditLogger')
+const authenticateToken = require('./middlewares/authenticateToken')
+const setTenantContext  = require('./middlewares/setTenantContext')
 
 const app = express()
 
@@ -45,7 +47,24 @@ app.use(express.json())
 app.use(auditLogger)
 
 // =============================================================================
-// RUTAS
+// RUTAS PÚBLICAS (sin autenticación)
+// =============================================================================
+app.use('/api/v1/auth', require('./routes/auth.routes'))
+app.use('/api/v1/health', (req, res) => res.status(200).json({
+  status: 'success',
+  message: 'Servidor operativo',
+  data: { timestamp: new Date().toISOString() },
+}))
+
+// =============================================================================
+// MIDDLEWARES GLOBALES PARA RUTAS PRIVADAS
+// Todas las rutas debajo de este punto requieren token válido y tenant_id
+// =============================================================================
+app.use(authenticateToken)
+app.use(setTenantContext)
+
+// =============================================================================
+// RUTAS PRIVADAS
 // =============================================================================
 app.use('/api/v1', routes)
 
