@@ -19,8 +19,9 @@ app.use(helmet())
 
 // CORS — solo acepta orígenes explícitamente listados
 const ALLOWED_ORIGINS = [
-  'http://localhost:5173', // Vite dev server (frontend)
-  'http://localhost:4173', // Vite preview
+  'http://localhost:5173',                          // Vite dev server (frontend)
+  'http://localhost:4173',                          // Vite preview
+  'https://siga-frontend-delta-six.vercel.app',    // Producción Vercel
 ]
 
 app.use(cors({
