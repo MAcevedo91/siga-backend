@@ -46,7 +46,8 @@ const listarIncidentes = async (tenantId, filtros = {}) => {
     .select(`
       id, fecha, gravedad, estado, relato, medidas, fecha_creacion,
       tipos_abordaje ( nombre ),
-      usuarios ( nombre, apellido )
+      usuarios ( nombre, apellido ),
+      incidente_estudiantes ( estudiante_id )
     `)
     .eq('tenant_id', tenantId)
     .order('fecha_creacion', { ascending: false })
@@ -70,7 +71,12 @@ const listarIncidentes = async (tenantId, filtros = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+
+  return data.map(inc => ({
+    ...inc,
+    tipo_abordaje: inc.tipos_abordaje?.nombre,
+    estudiantes_count: inc.incidente_estudiantes?.length || 0,
+  }))
 }
 
 /**
@@ -103,9 +109,15 @@ const obtenerIncidente = async (id, tenantId) => {
     `)
     .eq('incidente_id', id)
 
+  const flatEstudiantes = (estudiantes || []).map(e => ({
+    ...e.estudiantes,
+    es_victima: e.es_victima,
+    observacion: e.observacion,
+  }))
+
   return {
     ...data,
-    estudiantes: estudiantes || [],
+    estudiantes: flatEstudiantes,
   }
 }
 

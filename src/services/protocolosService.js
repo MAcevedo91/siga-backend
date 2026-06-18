@@ -47,7 +47,12 @@ const listarProtocolos = async (tenantId, filtros = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+
+  return data.map(prot => ({
+    ...prot,
+    tipo_protocolo: prot.tipos_protocolo?.nombre,
+    estudiante: prot.estudiantes,
+  }))
 }
 
 /**
@@ -66,13 +71,19 @@ const obtenerProtocolo = async (id, tenantId) => {
     .eq('tenant_id', tenantId)
     .single()
 
+  const mapProtocolo = (prot) => ({
+    ...prot,
+    tipo_protocolo: prot.tipos_protocolo?.nombre,
+    estudiante: prot.estudiantes,
+  })
+
   if (error || !data) {
     const err = new Error('Protocolo no encontrado')
     err.statusCode = 404
     throw err
   }
 
-  return data
+  return mapProtocolo(data)
 }
 
 /**

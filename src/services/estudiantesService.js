@@ -41,17 +41,31 @@ const buscarOCrearCurso = async (nombreCurso, tenantId) => {
 // CRUD
 // =============================================================================
 
-/**
- * Lista estudiantes con filtros opcionales.
- */
+const sanitizeSearch = (text) => {
+  return text
+    .replace(/[aáAÁäÄ]/g, '_')
+    .replace(/[eéEÉëË]/g, '_')
+    .replace(/[iíIÍïÏ]/g, '_')
+    .replace(/[oóOÓöÖ]/g, '_')
+    .replace(/[uúUÚüÜ]/g, '_')
+}
+
 const listarEstudiantes = async (tenantId, filtros = {}) => {
-  const { nombre, rut, curso_id, activo } = filtros
+  const { nombre, rut, curso_id, activo, search } = filtros
 
   let query = supabase
     .from('estudiantes')
     .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, activo')
     .eq('tenant_id', tenantId)
     .order('apellido', { ascending: true })
+
+  if (search && search.trim()) {
+    const tokens = search.trim().split(/\s+/)
+    tokens.forEach(token => {
+      const looseSearch = sanitizeSearch(token)
+      query = query.or(`nombre.ilike.%${looseSearch}%,apellido.ilike.%${looseSearch}%,rut.ilike.%${looseSearch}%`)
+    })
+  }
 
   if (nombre)    query = query.ilike('nombre', `%${nombre}%`)
   if (rut)       query = query.ilike('rut', `%${rut}%`)
