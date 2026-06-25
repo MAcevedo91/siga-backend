@@ -1,6 +1,8 @@
 const xlsx        = require('xlsx')
 const { parse }   = require('csv-parse/sync')
 const estudiantesService = require('../services/estudiantesService')
+const { generarHistorialPDF } = require('../services/pdfService')
+const { supabase } = require('../utils/db')
 
 /**
  * GET /api/v1/estudiantes
@@ -147,10 +149,72 @@ const importarHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/estudiantes/:id/pdf
+ * Genera y descarga el historial conductual en PDF
+ */
+const pdfHandler = async (req, res, next) => {
+  try {
+    // Obtener perfil completo del estudiante
+    const perfil = await estudiantesService.obtenerPerfil(req.params.id, req.user.tenant_id)
+
+    // Obtener incidentes via tabla incidente_estudiantes
+    const { data: incidentesRaw } = await supabase
+      .from('incidente_estudiantes')
+      .select(`
+        incidentes (
+          id, fecha, gravedad, relato, medidas, estado,
+          tipos_abordaje ( nombre )
+        )
+      `)
+      .eq('estudiante_id', req.params.id)
+      .order('incidente_id', { ascending: false })
+
+    const incidentes = (incidentesRaw || [])
+      .map(r => r.incidentes)
+      .filter(Boolean)
+
+    // Generar PDF
+    const pdfBuffer = await generarHistorialPDF(perfil, incidentes)
+
+    // Nombre del archivo
+    const fecha = new Date().toISOString().split('T')[0]
+    const rut = perfil.rut.replace(/[^0-9kK]/g, '')
+    const filename = `historial_${rut}_${fecha}.pdf`
+
+    // Registrar en auditoría (fire-and-forget)
+    setImmediate(async () => {
+      try {
+        await supabase.from('auditoria').insert({
+          tenant_id:      req.user.tenant_id,
+          usuario_id:     req.user.user_id,
+          accion:         'CREATE',
+          tabla_afectada: 'reportes',
+          registro_id:    req.params.id,
+          detalle:        { tipo: 'pdf_historial', estudiante: `${perfil.nombre} ${perfil.apellido}` },
+          ip:             req.headers['x-forwarded-for']?.split(',')[0] || req.socket?.remoteAddress,
+        })
+      } catch (err) {
+        console.error('[AUDIT] Error al registrar PDF:', err.message)
+      }
+    })
+
+    // Enviar PDF como descarga
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+    res.send(pdfBuffer)
+
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   perfilHandler,
   crearHandler,
   actualizarHandler,
   importarHandler,
+  pdfHandler,
 }

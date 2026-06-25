@@ -7,6 +7,7 @@ const {
   crearHandler,
   actualizarHandler,
   importarHandler,
+  pdfHandler,
 } = require('../controllers/estudiantesController')
 
 const router = Router()
@@ -61,6 +62,12 @@ const uploadWithErrorHandling = (req, res, next) => {
 // Lectura — todos los roles autenticados
 router.get('/', listarHandler)
 router.get('/:id/perfil', perfilHandler)
+
+// PDF — solo Administrador y Equipo de Formación
+router.get('/:id/pdf',
+  requireRole('Administrador', 'Equipo de Formación'),
+  pdfHandler
+)
 
 // Escritura — solo Administrador y Coordinador
 router.post('/',
