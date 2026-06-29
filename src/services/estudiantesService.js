@@ -227,6 +227,12 @@ const importarEstudiantes = async (filas, tenantId) => {
     const apellido = fila.apellido || fila.Apellido || fila.APELLIDO || ''
     const curso    = fila.curso    || fila.Curso    || fila.CURSO    || ''
 
+    // Datos del apoderado (opcionales)
+    const apoderadoNombre   = fila.apoderado_nombre   || fila.apoderado_Nombre   || ''
+    const apoderadoApellido = fila.apoderado_apellido || fila.apoderado_Apellido || ''
+    const apoderadoTelefono = fila.apoderado_telefono || fila.apoderado_Telefono || ''
+    const apoderadoEmail    = fila.apoderado_email    || fila.apoderado_Email    || ''
+
     // Validar campos obligatorios
     if (!rut) {
       errores.push({ fila: numFila, rut: '', motivo: 'RUT requerido' })
@@ -258,8 +264,10 @@ const importarEstudiantes = async (filas, tenantId) => {
         .eq('tenant_id', tenantId)
         .single()
 
+      let estudianteId
+
       if (existente) {
-        // Actualizar
+        // Actualizar estudiante
         await supabase
           .from('estudiantes')
           .update({
@@ -270,10 +278,11 @@ const importarEstudiantes = async (filas, tenantId) => {
           .eq('id', existente.id)
           .eq('tenant_id', tenantId)
 
+        estudianteId = existente.id
         actualizados++
       } else {
-        // Insertar
-        await supabase
+        // Insertar estudiante
+        const { data: nuevo } = await supabase
           .from('estudiantes')
           .insert({
             tenant_id: tenantId,
@@ -283,8 +292,34 @@ const importarEstudiantes = async (filas, tenantId) => {
             curso_id:  cursoId,
             activo:    true,
           })
+          .select('id')
+          .single()
 
+        estudianteId = nuevo?.id
         importados++
+      }
+
+      // Crear o actualizar apoderado si vienen datos
+      if (estudianteId && apoderadoNombre && apoderadoApellido) {
+        // Verificar si ya tiene apoderado titular
+        const { data: apoderadoExistente } = await supabase
+          .from('apoderados')
+          .select('id')
+          .eq('estudiante_id', estudianteId)
+          .eq('es_titular', true)
+          .single()
+
+        if (!apoderadoExistente) {
+          await supabase.from('apoderados').insert({
+            tenant_id:     tenantId,
+            estudiante_id: estudianteId,
+            nombre:        apoderadoNombre.trim(),
+            apellido:      apoderadoApellido.trim(),
+            telefono:      apoderadoTelefono || null,
+            email:         apoderadoEmail    || null,
+            es_titular:    true,
+          })
+        }
       }
     } catch (err) {
       errores.push({ fila: numFila, rut, motivo: err.message || 'Error al procesar fila' })

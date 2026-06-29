@@ -34,7 +34,7 @@ const upload = multer({
   },
 })
 
-// Manejo de error de multer (archivo muy grande)
+// Manejo de error de multer (archivo muy grande o campo inesperado)
 const uploadWithErrorHandling = (req, res, next) => {
   upload.single('archivo')(req, res, (err) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
