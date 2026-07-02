@@ -2,6 +2,13 @@ const express = require('express')
 const cors    = require('cors')
 const helmet  = require('helmet')
 
+// Infrastructure middlewares
+const requestIdMiddleware = require('./middlewares/requestId')
+const loggingMiddleware   = require('./middlewares/logging')
+const securityMiddleware  = require('./middlewares/security')
+const { generalLimiter }  = require('./middlewares/rateLimiter')
+
+// Application middlewares
 const routes           = require('./routes')
 const auditLogger      = require('./middlewares/auditLogger')
 const authenticateToken = require('./middlewares/authenticateToken')
@@ -10,14 +17,21 @@ const setTenantContext  = require('./middlewares/setTenantContext')
 const app = express()
 
 // =============================================================================
-// MIDDLEWARES DE SEGURIDAD
+// INFRASTRUCTURE MIDDLEWARE CHAIN
+// Order is critical: requestId → logging → security → CORS → rate limiting
 // =============================================================================
 
-// Helmet agrega headers de seguridad automáticamente:
-// X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, etc.
-app.use(helmet())
+// 1. Request ID (must be first to add req.id for all subsequent middlewares)
+app.use(requestIdMiddleware)
 
-// CORS — solo acepta orígenes explícitamente listados
+// 2. HTTP Request/Response Logging (uses req.id)
+app.use(loggingMiddleware)
+
+// 3. Security headers (Helmet + custom)
+// Replaces standalone helmet() call with security middleware that includes helmet
+app.use(securityMiddleware)
+
+// 4. CORS — solo acepta orígenes explícitamente listados
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',                          // Vite dev server (frontend)
   'http://localhost:4173',                          // Vite preview
@@ -39,6 +53,13 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }))
+
+// 5. General rate limiter (applies to all routes)
+app.use(generalLimiter)
+
+// =============================================================================
+// BODY PARSERS
+// =============================================================================
 
 // Parseo de JSON en el body de los requests
 app.use(express.json())
