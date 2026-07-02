@@ -1,6 +1,5 @@
 const express = require('express')
 const cors    = require('cors')
-const helmet  = require('helmet')
 
 // Infrastructure middlewares
 const requestIdMiddleware = require('./middlewares/requestId')
@@ -116,7 +115,8 @@ app.use((err, req, res, next) => {
   }
 
   // Log interno (nunca exponer al cliente)
-  console.error('[ERROR]', err)
+  const logger = require('./utils/logger')
+  logger.error('[ERROR]', err)
 
   res.status(err.statusCode || 500).json({
     status: 'error',

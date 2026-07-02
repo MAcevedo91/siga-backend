@@ -51,7 +51,7 @@ const authenticatedLimiter = rateLimit({
   max: 200,
   keyGenerator: (req) => {
     // Use user ID if authenticated, fallback to IP with IPv6 support
-    return req.user?.id || ipKeyGenerator(req)
+    return req.user?.id || ipKeyGenerator(req.ip)
   },
   message: {
     error: 'Demasiadas peticiones, por favor intente más tarde.'
