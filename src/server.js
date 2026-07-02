@@ -9,8 +9,8 @@ const app        = require('./app')
 const logger     = require('./utils/logger')
 const { testConnection, supabase } = require('./utils/db')
 const { initSocketServer } = require('./sockets')
-const Queue = require('bull')
 const cron = require('node-cron')
+const alertaAusentismoQueue = require('./queues/alertaAusentismoQueue')
 const { procesarAlertaAusentismo } = require('./jobs/alertaAusentismoJob')
 
 // Initialize email worker
@@ -19,35 +19,9 @@ if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
   logger.info('Email worker enabled')
 }
 
-// Initialize alerta ausentismo queue
-const alertaAusentismoQueue = new Queue('alerta-ausentismo', {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD
-  }
-})
-
 // Process alerta ausentismo queue
 alertaAusentismoQueue.process(async (job) => {
   return await procesarAlertaAusentismo(job)
-})
-
-// Event listeners
-alertaAusentismoQueue.on('completed', (job, result) => {
-  logger.info('[AlertaAusentismo] Job completed', {
-    jobId: job.id,
-    tenantId: job.data.tenantId,
-    result
-  })
-})
-
-alertaAusentismoQueue.on('failed', (job, err) => {
-  logger.error('[AlertaAusentismo] Job failed', {
-    jobId: job.id,
-    tenantId: job.data.tenantId,
-    error: err.message
-  })
 })
 
 // Schedule daily at 9 AM for all tenants
