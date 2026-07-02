@@ -1,33 +1,18 @@
-let io = null
+/**
+ * Legacy socket.js - redirects to new sockets implementation
+ * This file is kept for backwards compatibility
+ *
+ * IMPORTANT: Use src/sockets/index.js for the main Socket.io setup
+ */
+
+const { initSocketServer, getIO } = require('../sockets')
 
 /**
- * Inicializa el servidor Socket.io
+ * @deprecated Use initSocketServer from src/sockets/index.js instead
  */
 const initSocket = (httpServer) => {
-  if (io) {
-    return io
-  }
-
-  const { Server } = require('socket.io')
-
-  io = new Server(httpServer, {
-    cors: {
-      origin: process.env.FRONTEND_URL || '*',
-      methods: ['GET', 'POST']
-    }
-  })
-
-  return io
-}
-
-/**
- * Obtiene la instancia de Socket.io
- */
-const getIO = () => {
-  if (!io) {
-    throw new Error('Socket.io no ha sido inicializado')
-  }
-  return io
+  console.warn('DEPRECATION WARNING: initSocket from utils/socket.js is deprecated. Use initSocketServer from sockets/index.js')
+  return initSocketServer(httpServer)
 }
 
 module.exports = {

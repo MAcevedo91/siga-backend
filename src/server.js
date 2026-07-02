@@ -65,7 +65,7 @@ const start = async () => {
 
   // Create separate HTTP server for Socket.io
   const socketHttpServer = http.createServer()
-  initSocketServer(socketHttpServer)
+  await initSocketServer(socketHttpServer)
 
   // Start both servers
   httpServer.listen(PORT, () => {
