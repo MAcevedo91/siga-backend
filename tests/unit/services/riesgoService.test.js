@@ -253,18 +253,13 @@ describe('Riesgo Service', () => {
         error: null
       })
 
-      // Mock para estudiante 1 (score alto)
-      const mockIncidentes1 = [
-        { id: 1, gravedad: 'Grave', fecha: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 2, gravedad: 'Grave', fecha: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() }
+      // Mock ALL incidents for ALL students (batched query)
+      const mockAllIncidentes = [
+        { id: 1, estudiante_id: 1, gravedad: 'Grave', fecha: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
+        { id: 2, estudiante_id: 1, gravedad: 'Grave', fecha: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+        { id: 3, estudiante_id: 2, gravedad: 'Leve', fecha: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() }
       ]
 
-      // Mock para estudiante 2 (score bajo)
-      const mockIncidentes2 = [
-        { id: 3, gravedad: 'Leve', fecha: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() }
-      ]
-
-      let callCount = 0
       supabase.from.mockImplementation((table) => {
         if (table === 'estudiantes') {
           return {
@@ -273,11 +268,8 @@ describe('Riesgo Service', () => {
             })
           }
         } else if (table === 'incidentes') {
-          callCount++
-          const mockData = callCount === 1 ? mockIncidentes1 : mockIncidentes2
-
           const mockOrder = jest.fn().mockResolvedValue({
-            data: mockData,
+            data: mockAllIncidentes,
             error: null
           })
 
@@ -285,17 +277,17 @@ describe('Riesgo Service', () => {
             order: mockOrder
           })
 
-          const mockEq2 = jest.fn().mockReturnValue({
+          const mockIn = jest.fn().mockReturnValue({
             gte: mockGte
           })
 
-          const mockEq1 = jest.fn().mockReturnValue({
-            eq: mockEq2
+          const mockEq = jest.fn().mockReturnValue({
+            in: mockIn
           })
 
           return {
             select: jest.fn().mockReturnValue({
-              eq: mockEq1
+              eq: mockEq
             })
           }
         }
@@ -319,9 +311,9 @@ describe('Riesgo Service', () => {
         error: null
       })
 
-      // Estudiante con score bajo
+      // Estudiante con score bajo (batched query)
       const mockIncidentes = [
-        { id: 1, gravedad: 'Leve', fecha: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() }
+        { id: 1, estudiante_id: 1, gravedad: 'Leve', fecha: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() }
       ]
 
       supabase.from.mockImplementation((table) => {
@@ -341,17 +333,17 @@ describe('Riesgo Service', () => {
             order: mockOrder
           })
 
-          const mockEq2 = jest.fn().mockReturnValue({
+          const mockIn = jest.fn().mockReturnValue({
             gte: mockGte
           })
 
-          const mockEq1 = jest.fn().mockReturnValue({
-            eq: mockEq2
+          const mockEq = jest.fn().mockReturnValue({
+            in: mockIn
           })
 
           return {
             select: jest.fn().mockReturnValue({
-              eq: mockEq1
+              eq: mockEq
             })
           }
         }

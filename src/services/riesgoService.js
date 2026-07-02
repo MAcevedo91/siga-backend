@@ -93,11 +93,84 @@ async function getEstudiantesConRiesgo(tenantId, minScore = 0) {
 
   if (error) throw new Error(error.message)
 
-  // Calculate risk for each
+  // OPTIMIZATION: Fetch ALL incidents for ALL students in ONE query
+  const now = new Date()
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+  const estudianteIds = estudiantes.map(e => e.id)
+
+  const { data: allIncidentes, error: incidentesError } = await supabase
+    .from('incidentes')
+    .select('id, estudiante_id, gravedad, fecha')
+    .eq('tenant_id', tenantId)
+    .in('estudiante_id', estudianteIds)
+    .gte('fecha', thirtyDaysAgo.toISOString())
+    .order('fecha', { ascending: false })
+
+  if (incidentesError) throw new Error(incidentesError.message)
+
+  // Group incidents by estudiante_id in memory
+  const incidentesByEstudiante = {}
+  for (const incidente of (allIncidentes || [])) {
+    if (!incidentesByEstudiante[incidente.estudiante_id]) {
+      incidentesByEstudiante[incidente.estudiante_id] = []
+    }
+    incidentesByEstudiante[incidente.estudiante_id].push(incidente)
+  }
+
+  // Calculate risk for each student using grouped data
   const estudiantesConRiesgo = []
 
   for (const estudiante of estudiantes) {
-    const riesgo = await calcularRiesgoEstudiante(estudiante.id, tenantId)
+    const incidentes = incidentesByEstudiante[estudiante.id] || []
+
+    // Calculate risk inline (same algorithm as calcularRiesgoEstudiante)
+    let riesgo
+    if (incidentes.length === 0) {
+      riesgo = { score: 0, level: 'Bajo', details: { total: 0, recent: 0 } }
+    } else {
+      // Frequency score (max 20 points)
+      const frequencyScore = Math.min(incidentes.length * 2, 20)
+
+      // Severity score (weighted)
+      let severityScore = 0
+      let recentCount = 0
+
+      for (const incidente of incidentes) {
+        const basePoints = SEVERITY_WEIGHTS[incidente.gravedad] || 5
+        const incidentDate = new Date(incidente.fecha)
+
+        // Apply recency multiplier
+        const multiplier = incidentDate >= sevenDaysAgo ? RECENCY_MULTIPLIER : 1.0
+        severityScore += basePoints * multiplier
+
+        if (incidentDate >= sevenDaysAgo) {
+          recentCount++
+        }
+      }
+
+      // Total score (cap at 100)
+      const totalScore = Math.min(frequencyScore + severityScore, 100)
+
+      // Determine level
+      let level
+      if (totalScore < 26) level = 'Bajo'
+      else if (totalScore < 51) level = 'Medio'
+      else if (totalScore < 76) level = 'Alto'
+      else level = 'Crítico'
+
+      riesgo = {
+        score: Math.round(totalScore),
+        level,
+        details: {
+          total: incidentes.length,
+          recent: recentCount,
+          frequencyScore,
+          severityScore: Math.round(severityScore)
+        }
+      }
+    }
 
     if (riesgo.score >= minScore) {
       estudiantesConRiesgo.push({
