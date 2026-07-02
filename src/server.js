@@ -14,6 +14,8 @@ const alertaAusentismoQueue = require('./queues/alertaAusentismoQueue')
 const { procesarAlertaAusentismo } = require('./jobs/alertaAusentismoJob')
 const mensajeOfflineQueue = require('./queues/mensajeOfflineQueue')
 const { procesarMensajeOffline } = require('./jobs/mensajeOfflineJob')
+const { broadcastQueue, enviarBroadcast } = require('./services/broadcastsService')
+const { procesarBroadcastsProgramados } = require('./jobs/broadcastProgramadoJob')
 
 // Initialize email worker
 if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
@@ -29,6 +31,12 @@ alertaAusentismoQueue.process(async (job) => {
 // Process mensaje offline queue
 mensajeOfflineQueue.process(async (job) => {
   return await procesarMensajeOffline(job)
+})
+
+// Process broadcast queue
+broadcastQueue.process(async (job) => {
+  const { broadcastId, tenantId } = job.data
+  return await enviarBroadcast(broadcastId, tenantId)
 })
 
 // Schedule daily at 9 AM for all tenants
@@ -59,6 +67,9 @@ cron.schedule('0 9 * * *', async () => {
     logger.error('[Cron] Error en cron de ausentismo:', error)
   }
 })
+
+// Cron: chequear broadcasts programados cada minuto
+cron.schedule('* * * * *', procesarBroadcastsProgramados)
 
 const PORT = process.env.PORT || 3000
 const SOCKET_PORT = process.env.SOCKET_PORT || 3001
@@ -94,6 +105,7 @@ const start = async () => {
     socketHttpServer.close()
     await alertaAusentismoQueue.close()
     await mensajeOfflineQueue.close()
+    await broadcastQueue.close()
   })
 }
 
