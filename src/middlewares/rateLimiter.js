@@ -2,10 +2,10 @@ const rateLimit = require('express-rate-limit')
 const { ipKeyGenerator } = require('express-rate-limit')
 const logger = require('../utils/logger')
 
-// General API rate limiter: 100 requests per 15 minutes
+// General API rate limiter: 100 requests per 15 minutes (1000 in dev)
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100,
   message: {
     error: 'Demasiadas peticiones desde esta IP, por favor intente más tarde.'
   },
@@ -45,10 +45,10 @@ const authLimiter = rateLimit({
   }
 })
 
-// Authenticated users rate limiter: 200 requests per 15 minutes (more permissive)
+// Authenticated users rate limiter: 200 requests per 15 minutes (2000 in dev)
 const authenticatedLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: process.env.NODE_ENV === 'development' ? 2000 : 200,
   keyGenerator: (req) => {
     // Use user ID if authenticated, fallback to IP with IPv6 support
     return req.user?.id || ipKeyGenerator(req.ip)
