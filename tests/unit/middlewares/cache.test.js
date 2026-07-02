@@ -14,7 +14,8 @@ describe('cacheMiddleware', () => {
     req = {
       method: 'GET',
       originalUrl: '/api/v1/estudiantes',
-      id: 'test-id'
+      id: 'test-id',
+      user: { tenant_id: 'test-tenant-123' }
     }
     res = {
       locals: {},
@@ -41,7 +42,7 @@ describe('cacheMiddleware', () => {
     const middleware = cacheMiddleware(300)
     await middleware(req, res, next)
 
-    expect(redisClient.get).toHaveBeenCalledWith('cache:/api/v1/estudiantes')
+    expect(redisClient.get).toHaveBeenCalledWith('cache:test-tenant-123:/api/v1/estudiantes')
     expect(res.json).toHaveBeenCalledWith({ data: 'cached' })
     expect(next).not.toHaveBeenCalled()
   })
@@ -52,7 +53,7 @@ describe('cacheMiddleware', () => {
     const middleware = cacheMiddleware(300)
     await middleware(req, res, next)
 
-    expect(redisClient.get).toHaveBeenCalledWith('cache:/api/v1/estudiantes')
+    expect(redisClient.get).toHaveBeenCalledWith('cache:test-tenant-123:/api/v1/estudiantes')
     expect(next).toHaveBeenCalled()
   })
 
@@ -70,7 +71,7 @@ describe('cacheMiddleware', () => {
     res.json(testData)
 
     expect(redisClient.setEx).toHaveBeenCalledWith(
-      'cache:/api/v1/estudiantes',
+      'cache:test-tenant-123:/api/v1/estudiantes',
       300,
       JSON.stringify(testData)
     )
@@ -85,7 +86,7 @@ describe('cacheMiddleware', () => {
     // Simulate calling res.json
     res.json({ test: 'data' })
 
-    expect(res.locals.cacheKey).toBe('cache:/api/v1/estudiantes')
+    expect(res.locals.cacheKey).toBe('cache:test-tenant-123:/api/v1/estudiantes')
   })
 
   it('debe continuar si Redis falla', async () => {
@@ -108,7 +109,7 @@ describe('cacheMiddleware', () => {
     res.json({ test: 'data' })
 
     expect(redisClient.setEx).toHaveBeenCalledWith(
-      'cache:/api/v1/estudiantes',
+      'cache:test-tenant-123:/api/v1/estudiantes',
       600,
       JSON.stringify({ test: 'data' })
     )

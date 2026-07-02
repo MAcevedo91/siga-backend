@@ -13,7 +13,7 @@ function cacheMiddleware(ttl = 300) {
       return next()
     }
 
-    const cacheKey = `cache:${req.originalUrl}`
+    const cacheKey = `cache:${req.user.tenant_id}:${req.originalUrl}`
 
     try {
       const cachedData = await redisClient.get(cacheKey)

@@ -1,6 +1,7 @@
 const { z }                 = require('zod')
 const { supabase }          = require('../utils/db')
 const { crearAlerta }       = require('./notificacionService')
+const { invalidateIncidentes } = require('../utils/cacheInvalidator')
 
 // =============================================================================
 // ESQUEMA DE VALIDACIÓN ZOD
@@ -199,7 +200,10 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
     }, tenantId))
   }
 
-  // 5. Retornar incidente completo
+  // 5. Invalidar cache después de crear incidente
+  await invalidateIncidentes(tenantId)
+
+  // 6. Retornar incidente completo
   return obtenerIncidente(incidente.id, tenantId)
 }
 
@@ -229,6 +233,10 @@ const cambiarEstado = async (id, tenantId, nuevoEstado) => {
     .single()
 
   if (error) throw error
+
+  // Invalidar cache después de cambiar estado
+  await invalidateIncidentes(tenantId)
+
   return data
 }
 

@@ -71,8 +71,8 @@ describe('Cache Invalidator', () => {
 
       await invalidateEstudiantes('tenant-123')
 
-      expect(redisClient.keys).toHaveBeenCalledWith('cache:/api/v1/estudiantes*')
-      expect(redisClient.keys).toHaveBeenCalledWith('cache:/api/v1/dashboard*')
+      expect(redisClient.keys).toHaveBeenCalledWith('cache:tenant-123:/api/v1/estudiantes*')
+      expect(redisClient.keys).toHaveBeenCalledWith('cache:tenant-123:/api/v1/dashboard*')
     })
   })
 
@@ -83,8 +83,8 @@ describe('Cache Invalidator', () => {
 
       await invalidateIncidentes('tenant-123')
 
-      expect(redisClient.keys).toHaveBeenCalledWith('cache:/api/v1/incidentes*')
-      expect(redisClient.keys).toHaveBeenCalledWith('cache:/api/v1/dashboard*')
+      expect(redisClient.keys).toHaveBeenCalledWith('cache:tenant-123:/api/v1/incidentes*')
+      expect(redisClient.keys).toHaveBeenCalledWith('cache:tenant-123:/api/v1/dashboard*')
     })
   })
 
@@ -94,7 +94,7 @@ describe('Cache Invalidator', () => {
 
       await invalidateDashboard('tenant-123')
 
-      expect(redisClient.keys).toHaveBeenCalledWith('cache:/api/v1/dashboard*')
+      expect(redisClient.keys).toHaveBeenCalledWith('cache:tenant-123:/api/v1/dashboard*')
       expect(redisClient.keys).toHaveBeenCalledTimes(1)
     })
   })

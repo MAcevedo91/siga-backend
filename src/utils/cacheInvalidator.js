@@ -43,8 +43,8 @@ async function invalidateCache(patterns) {
  */
 async function invalidateEstudiantes(tenantId) {
   await invalidateCache([
-    'cache:/api/v1/estudiantes*',
-    'cache:/api/v1/dashboard*'
+    `cache:${tenantId}:/api/v1/estudiantes*`,
+    `cache:${tenantId}:/api/v1/dashboard*`
   ])
 }
 
@@ -55,8 +55,8 @@ async function invalidateEstudiantes(tenantId) {
  */
 async function invalidateIncidentes(tenantId) {
   await invalidateCache([
-    'cache:/api/v1/incidentes*',
-    'cache:/api/v1/dashboard*'
+    `cache:${tenantId}:/api/v1/incidentes*`,
+    `cache:${tenantId}:/api/v1/dashboard*`
   ])
 }
 
@@ -67,7 +67,7 @@ async function invalidateIncidentes(tenantId) {
  */
 async function invalidateDashboard(tenantId) {
   await invalidateCache([
-    'cache:/api/v1/dashboard*'
+    `cache:${tenantId}:/api/v1/dashboard*`
   ])
 }
 
