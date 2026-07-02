@@ -133,14 +133,16 @@ async function getAuditoriaLogs({
       )
     `)
     .eq('tenant_id', tenantId)
-    .order('fecha_hora', { ascending: false })
-    .limit(limit)
 
+  // Apply optional filters
   if (tabla) query = query.eq('tabla_afectada', tabla)
   if (userId) query = query.eq('usuario_id', userId)
   if (accion) query = query.eq('accion', accion)
   if (fechaDesde) query = query.gte('fecha_hora', fechaDesde.toISOString())
   if (fechaHasta) query = query.lte('fecha_hora', fechaHasta.toISOString())
+
+  // Apply order and limit at the end
+  query = query.order('fecha_hora', { ascending: false }).limit(limit)
 
   const { data, error } = await query
 
