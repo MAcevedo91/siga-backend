@@ -1,5 +1,6 @@
 const { supabase } = require('../utils/db')
 const { validarRut, formatearRut } = require('../utils/rutValidator')
+const { invalidateEstudiantes } = require('../utils/cacheInvalidator')
 
 // =============================================================================
 // HELPERS
@@ -173,6 +174,9 @@ const crearEstudiante = async (tenantId, datos) => {
     throw error
   }
 
+  // Invalidar cache después de crear
+  await invalidateEstudiantes(tenantId)
+
   return data
 }
 
@@ -201,6 +205,9 @@ const actualizarEstudiante = async (id, tenantId, datos) => {
     err.statusCode = 404
     throw err
   }
+
+  // Invalidar cache después de actualizar
+  await invalidateEstudiantes(tenantId)
 
   return data
 }
@@ -289,6 +296,11 @@ const importarEstudiantes = async (filas, tenantId) => {
     } catch (err) {
       errores.push({ fila: numFila, rut, motivo: err.message || 'Error al procesar fila' })
     }
+  }
+
+  // Invalidar cache después de importación masiva
+  if (importados > 0 || actualizados > 0) {
+    await invalidateEstudiantes(tenantId)
   }
 
   return { importados, actualizados, errores }

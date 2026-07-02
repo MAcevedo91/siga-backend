@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const multer     = require('multer')
 const requireRole = require('../middlewares/requireRole')
+const cacheMiddleware = require('../middlewares/cache')
 const {
   listarHandler,
   perfilHandler,
@@ -59,9 +60,9 @@ const uploadWithErrorHandling = (req, res, next) => {
 // RUTAS
 // ============================================================
 
-// Lectura — todos los roles autenticados
-router.get('/', listarHandler)
-router.get('/:id/perfil', perfilHandler)
+// Lectura — todos los roles autenticados (con cache 10min)
+router.get('/', cacheMiddleware(600), listarHandler)
+router.get('/:id/perfil', cacheMiddleware(600), perfilHandler)
 
 // PDF — solo Administrador y Equipo de Formación
 router.get('/:id/pdf',
