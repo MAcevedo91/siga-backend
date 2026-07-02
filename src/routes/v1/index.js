@@ -12,6 +12,7 @@ router.use('/estudiantes', require('../estudiantes.routes'))
 router.use('/incidentes',  require('../incidentes.routes'))
 router.use('/protocolos',  require('../protocolos.routes'))
 router.use('/dashboard',   require('../dashboard.routes'))
+router.use('/riesgo',      require('../riesgo'))
 
 // Additional v1 routes that were mounted separately in app.js
 // These are now consolidated here for consistency
