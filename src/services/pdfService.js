@@ -278,4 +278,83 @@ const generarHistorialPDF = (estudiante, incidentes) => {
   })
 }
 
-module.exports = { generarHistorialPDF }
+/**
+ * Generate Estudiante Profile PDF
+ *
+ * Includes: Personal info, incident history, risk score, protocols applied
+ */
+async function generarPerfilEstudiante(estudiante, incidentes, riesgo) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 })
+      const chunks = []
+
+      doc.on('data', chunk => chunks.push(chunk))
+      doc.on('end', () => resolve(Buffer.concat(chunks)))
+      doc.on('error', reject)
+
+      // Header
+      doc.fontSize(20).text('SIGA Escolar - Perfil de Estudiante', { align: 'center' })
+      doc.moveDown()
+      doc.fontSize(10).text(`Generado: ${new Date().toLocaleDateString('es-CL')}`, { align: 'right' })
+      doc.moveDown(2)
+
+      // Personal Info
+      doc.fontSize(14).text('Información Personal', { underline: true })
+      doc.moveDown(0.5)
+      doc.fontSize(11)
+        .text(`Nombre: ${estudiante.nombre} ${estudiante.apellido}`)
+        .text(`RUT: ${estudiante.rut}`)
+        .text(`Curso: ${estudiante.curso || 'N/A'}`)
+        .text(`Fecha Nacimiento: ${estudiante.fecha_nacimiento ? new Date(estudiante.fecha_nacimiento).toLocaleDateString('es-CL') : 'N/A'}`)
+
+      doc.moveDown(2)
+
+      // Risk Score
+      doc.fontSize(14).text('Nivel de Riesgo', { underline: true })
+      doc.moveDown(0.5)
+      doc.fontSize(11)
+        .text(`Puntaje: ${riesgo.score}/100`)
+        .text(`Nivel: ${riesgo.level}`)
+        .text(`Total incidentes (30 días): ${riesgo.details.total}`)
+        .text(`Incidentes recientes (7 días): ${riesgo.details.recent}`)
+
+      doc.moveDown(2)
+
+      // Incident History
+      doc.fontSize(14).text('Historial de Incidentes', { underline: true })
+      doc.moveDown(0.5)
+
+      if (incidentes.length === 0) {
+        doc.fontSize(11).text('Sin incidentes registrados.')
+      } else {
+        incidentes.slice(0, 10).forEach((inc, idx) => {
+          doc.fontSize(10)
+            .text(`${idx + 1}. ${new Date(inc.fecha).toLocaleDateString('es-CL')} - ${inc.gravedad}`)
+            .fontSize(9)
+            .text(`   ${inc.relato.substring(0, 100)}...`, { indent: 20 })
+          doc.moveDown(0.5)
+        })
+
+        if (incidentes.length > 10) {
+          doc.fontSize(9).text(`... y ${incidentes.length - 10} incidentes más`)
+        }
+      }
+
+      // Footer
+      doc.fontSize(8)
+        .text('Este documento es confidencial y de uso exclusivo del personal autorizado.', 50, doc.page.height - 50, {
+          align: 'center'
+        })
+
+      doc.end()
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
+
+module.exports = {
+  generarHistorialPDF,
+  generarPerfilEstudiante
+}
