@@ -1,13 +1,21 @@
 const asistenciaService = require('../../services/asistenciaService')
 const { supabase } = require('../../utils/db')
 const { registrarAuditoria } = require('../../services/auditoriaService')
+const redis = require('../../utils/redis')
 
 jest.mock('../../utils/db')
 jest.mock('../../services/auditoriaService')
+jest.mock('../../utils/redis')
 
 describe('asistenciaService', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+
+    // Setup Redis mock methods
+    redis.get = jest.fn()
+    redis.setEx = jest.fn()
+    redis.keys = jest.fn()
+    redis.del = jest.fn()
   })
 
   describe('registrarAsistencia', () => {
@@ -468,6 +476,189 @@ describe('asistenciaService', () => {
       await expect(
         asistenciaService.getEstudiantesEnRiesgo('tenant-uuid')
       ).rejects.toThrow('Error al obtener estudiantes')
+    })
+  })
+
+  describe('asistenciaService - cache', () => {
+    it('should use cache on second call to getAsistenciaCurso', async () => {
+      const mockEstudiantes = [
+        {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          nombre: 'Juan',
+          apellido: 'Pérez',
+          asistencia: [
+            { fecha: '2026-07-02', estado: 'Presente', bloque: 1, observaciones: null, justificacion_adjunto: null }
+          ]
+        }
+      ]
+
+      const mockResult = [
+        {
+          estudianteId: '550e8400-e29b-41d4-a716-446655440001',
+          nombre: 'Juan',
+          apellido: 'Pérez',
+          estado: 'Presente',
+          bloque: 1,
+          observaciones: null,
+          justificacion_adjunto: null
+        }
+      ]
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockEstudiantes,
+          error: null
+        })
+      }
+
+      supabase.from = jest.fn().mockReturnValue(mockQuery)
+
+      // First call: cache MISS
+      redis.get.mockResolvedValueOnce(null)
+      redis.setEx.mockResolvedValue('OK')
+
+      const result1 = await asistenciaService.getAsistenciaCurso('tenant-uuid', 'curso-uuid', '2026-07-02', 1)
+
+      expect(redis.get).toHaveBeenCalledTimes(1)
+      expect(redis.setEx).toHaveBeenCalledTimes(1)
+      expect(supabase.from).toHaveBeenCalledTimes(1)
+      expect(result1).toEqual(mockResult)
+
+      // Second call: cache HIT
+      redis.get.mockResolvedValueOnce(JSON.stringify(mockResult))
+
+      const result2 = await asistenciaService.getAsistenciaCurso('tenant-uuid', 'curso-uuid', '2026-07-02', 1)
+
+      expect(redis.get).toHaveBeenCalledTimes(2)
+      expect(redis.setEx).toHaveBeenCalledTimes(1) // No new setEx call
+      expect(supabase.from).toHaveBeenCalledTimes(1) // No new DB call
+      expect(result2).toEqual(mockResult)
+    })
+
+    it('should use cache on second call to getEstudiantesEnRiesgo', async () => {
+      const mockEstudiantes = [
+        {
+          id: 'est1-uuid',
+          nombre: 'Juan',
+          apellido: 'Pérez',
+          curso: { nombre: '8A' },
+          asistencia: [
+            { estado: 'Presente' },
+            { estado: 'Ausente' },
+            { estado: 'Ausente' },
+            { estado: 'Ausente' },
+            { estado: 'Presente' }
+          ]
+        }
+      ]
+
+      const mockResult = [
+        {
+          estudianteId: 'est1-uuid',
+          nombre: 'Juan',
+          apellido: 'Pérez',
+          curso: '8A',
+          porcentajeAsistencia: 40,
+          diasAusente: 3
+        }
+      ]
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        is: jest.fn().mockResolvedValue({ data: mockEstudiantes, error: null })
+      }
+
+      supabase.from = jest.fn().mockReturnValue(mockQuery)
+
+      // First call: cache MISS
+      redis.get.mockResolvedValueOnce(null)
+      redis.setEx.mockResolvedValue('OK')
+
+      const result1 = await asistenciaService.getEstudiantesEnRiesgo('tenant-uuid', 85)
+
+      expect(redis.get).toHaveBeenCalledTimes(1)
+      expect(redis.setEx).toHaveBeenCalledTimes(1)
+      expect(supabase.from).toHaveBeenCalledTimes(1)
+      expect(result1).toEqual(mockResult)
+
+      // Second call: cache HIT
+      redis.get.mockResolvedValueOnce(JSON.stringify(mockResult))
+
+      const result2 = await asistenciaService.getEstudiantesEnRiesgo('tenant-uuid', 85)
+
+      expect(redis.get).toHaveBeenCalledTimes(2)
+      expect(redis.setEx).toHaveBeenCalledTimes(1) // No new setEx call
+      expect(supabase.from).toHaveBeenCalledTimes(1) // No new DB call
+      expect(result2).toEqual(mockResult)
+    })
+
+    it('should invalidate cache after registrarAsistencia', async () => {
+      const mockData = {
+        cursoId: '550e8400-e29b-41d4-a716-446655440000',
+        fecha: '2026-07-02',
+        bloque: 1,
+        asistencias: [
+          { estudianteId: '550e8400-e29b-41d4-a716-446655440001', estado: 'Presente' }
+        ]
+      }
+
+      const mockQuery = {
+        upsert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockResolvedValue({
+          data: [{ id: '1' }],
+          error: null
+        })
+      }
+
+      supabase.from = jest.fn().mockReturnValue(mockQuery)
+      registrarAuditoria.mockResolvedValue({ id: 'audit-1' })
+
+      // Mock cache invalidation methods
+      redis.keys.mockResolvedValueOnce(['asistencia:tenant:curso:2026-07-02:1'])
+      redis.del.mockResolvedValueOnce(1)
+      redis.keys.mockResolvedValueOnce(['alertas-ausentismo:tenant:85'])
+      redis.del.mockResolvedValueOnce(1)
+
+      await asistenciaService.registrarAsistencia('tenant-uuid', mockData, 'usuario-uuid')
+
+      expect(redis.keys).toHaveBeenCalledTimes(2)
+      expect(redis.del).toHaveBeenCalledTimes(2)
+    })
+
+    it('should fallback to DB query if cache fails', async () => {
+      const mockEstudiantes = [
+        {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          nombre: 'Juan',
+          apellido: 'Pérez',
+          asistencia: []
+        }
+      ]
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockEstudiantes,
+          error: null
+        })
+      }
+
+      supabase.from = jest.fn().mockReturnValue(mockQuery)
+
+      // Simulate cache error
+      redis.get.mockRejectedValueOnce(new Error('Redis connection failed'))
+
+      const result = await asistenciaService.getAsistenciaCurso('tenant-uuid', 'curso-uuid', '2026-07-02', 1)
+
+      expect(redis.get).toHaveBeenCalledTimes(1)
+      expect(supabase.from).toHaveBeenCalledTimes(1)
+      expect(result).toHaveLength(1)
     })
   })
 })

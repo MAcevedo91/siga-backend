@@ -2,6 +2,7 @@ const { z } = require('zod')
 const { supabase } = require('../utils/db')
 const { registrarAuditoria } = require('./auditoriaService')
 const logger = require('../utils/logger')
+const asistenciaCache = require('../utils/asistenciaCache')
 
 // =============================================================================
 // ESQUEMA DE VALIDACIÓN ZOD
@@ -67,6 +68,10 @@ const registrarAsistencia = async (tenantId, data, usuarioId) => {
     throw new Error(`Error al registrar asistencia: ${error.message}`)
   }
 
+  // Invalidar cache
+  await asistenciaCache.invalidateAsistenciaDia(tenantId, cursoId, fecha)
+  await asistenciaCache.invalidateAlertas(tenantId)
+
   // Auditoría
   await registrarAuditoria({
     tenantId,
@@ -93,42 +98,50 @@ const registrarAsistencia = async (tenantId, data, usuarioId) => {
  * @returns {Promise<Array>} - [{ estudianteId, nombre, apellido, estado, bloque, observaciones }]
  */
 const getAsistenciaCurso = async (tenantId, cursoId, fecha, bloque = null) => {
-  // Query estudiantes del curso con LEFT JOIN a asistencia
-  const { data, error } = await supabase
-    .from('estudiantes')
-    .select(`
-      id,
-      nombre,
-      apellido,
-      asistencia!left(fecha, estado, bloque, observaciones, justificacion_adjunto)
-    `)
-    .eq('tenant_id', tenantId)
-    .eq('curso_id', cursoId)
-    .order('apellido')
+  const cacheKey = asistenciaCache.getCacheKeyAsistenciaDia(tenantId, cursoId, fecha, bloque)
 
-  if (error) {
-    logger.error('Error obteniendo asistencia curso:', error)
-    throw new Error(`Error al obtener asistencia: ${error.message}`)
-  }
+  return await asistenciaCache.withCache(
+    cacheKey,
+    asistenciaCache.CACHE_TTL.ASISTENCIA_DIA,
+    async () => {
+      // Query estudiantes del curso con LEFT JOIN a asistencia
+      const { data, error } = await supabase
+        .from('estudiantes')
+        .select(`
+          id,
+          nombre,
+          apellido,
+          asistencia!left(fecha, estado, bloque, observaciones, justificacion_adjunto)
+        `)
+        .eq('tenant_id', tenantId)
+        .eq('curso_id', cursoId)
+        .order('apellido')
 
-  // Filtrar asistencia por fecha y bloque
-  const resultado = data.map(est => {
-    const asistenciaFecha = est.asistencia.find(
-      a => a.fecha === fecha && (bloque === null ? a.bloque === null : a.bloque === bloque)
-    )
+      if (error) {
+        logger.error('Error obteniendo asistencia curso:', error)
+        throw new Error(`Error al obtener asistencia: ${error.message}`)
+      }
 
-    return {
-      estudianteId: est.id,
-      nombre: est.nombre,
-      apellido: est.apellido,
-      estado: asistenciaFecha?.estado || null,
-      bloque: asistenciaFecha?.bloque || null,
-      observaciones: asistenciaFecha?.observaciones || null,
-      justificacion_adjunto: asistenciaFecha?.justificacion_adjunto || null
+      // Filtrar asistencia por fecha y bloque
+      const resultado = data.map(est => {
+        const asistenciaFecha = est.asistencia.find(
+          a => a.fecha === fecha && (bloque === null ? a.bloque === null : a.bloque === bloque)
+        )
+
+        return {
+          estudianteId: est.id,
+          nombre: est.nombre,
+          apellido: est.apellido,
+          estado: asistenciaFecha?.estado || null,
+          bloque: asistenciaFecha?.bloque || null,
+          observaciones: asistenciaFecha?.observaciones || null,
+          justificacion_adjunto: asistenciaFecha?.justificacion_adjunto || null
+        }
+      })
+
+      return resultado
     }
-  })
-
-  return resultado
+  )
 }
 
 /**
@@ -212,53 +225,61 @@ const calcularPorcentajeAsistencia = async (tenantId, estudianteId, fechaDesde, 
  * @returns {Promise<Array>} - [{ estudianteId, nombre, apellido, curso, porcentajeAsistencia, diasAusente }]
  */
 const getEstudiantesEnRiesgo = async (tenantId, porcentajeMinimo = 85) => {
-  // Calcular rango últimos 30 días
-  const fechaHasta = new Date().toISOString().split('T')[0]
-  const fechaDesde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const cacheKey = asistenciaCache.getCacheKeyAlertas(tenantId, porcentajeMinimo)
 
-  // Query estudiantes con sus asistencias (últimos 30 días)
-  const { data: estudiantes, error } = await supabase
-    .from('estudiantes')
-    .select(`
-      id,
-      nombre,
-      apellido,
-      curso:cursos!inner(nombre),
-      asistencia!left(estado)
-    `)
-    .eq('tenant_id', tenantId)
-    .gte('asistencia.fecha', fechaDesde)
-    .lte('asistencia.fecha', fechaHasta)
-    .is('asistencia.bloque', null) // Solo día completo
+  return await asistenciaCache.withCache(
+    cacheKey,
+    asistenciaCache.CACHE_TTL.ALERTAS,
+    async () => {
+      // Calcular rango últimos 30 días
+      const fechaHasta = new Date().toISOString().split('T')[0]
+      const fechaDesde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-  if (error) {
-    logger.error('Error obteniendo estudiantes en riesgo:', error)
-    throw new Error(`Error al obtener estudiantes: ${error.message}`)
-  }
+      // Query estudiantes con sus asistencias (últimos 30 días)
+      const { data: estudiantes, error } = await supabase
+        .from('estudiantes')
+        .select(`
+          id,
+          nombre,
+          apellido,
+          curso:cursos!inner(nombre),
+          asistencia!left(estado)
+        `)
+        .eq('tenant_id', tenantId)
+        .gte('asistencia.fecha', fechaDesde)
+        .lte('asistencia.fecha', fechaHasta)
+        .is('asistencia.bloque', null) // Solo día completo
 
-  // Calcular porcentaje por estudiante
-  const resultado = estudiantes
-    .map(est => {
-      const asistencias = est.asistencia || []
-      const totalDias = asistencias.length
-      const presente = asistencias.filter(a => a.estado === 'Presente').length
-      const ausente = asistencias.filter(a => a.estado === 'Ausente').length
-
-      const porcentaje = totalDias > 0 ? Math.round((presente / totalDias) * 100) : 100
-
-      return {
-        estudianteId: est.id,
-        nombre: est.nombre,
-        apellido: est.apellido,
-        curso: est.curso?.nombre || 'Sin curso',
-        porcentajeAsistencia: porcentaje,
-        diasAusente: ausente
+      if (error) {
+        logger.error('Error obteniendo estudiantes en riesgo:', error)
+        throw new Error(`Error al obtener estudiantes: ${error.message}`)
       }
-    })
-    .filter(est => est.porcentajeAsistencia < porcentajeMinimo)
-    .sort((a, b) => a.porcentajeAsistencia - b.porcentajeAsistencia) // Menor porcentaje primero
 
-  return resultado
+      // Calcular porcentaje por estudiante
+      const resultado = estudiantes
+        .map(est => {
+          const asistencias = est.asistencia || []
+          const totalDias = asistencias.length
+          const presente = asistencias.filter(a => a.estado === 'Presente').length
+          const ausente = asistencias.filter(a => a.estado === 'Ausente').length
+
+          const porcentaje = totalDias > 0 ? Math.round((presente / totalDias) * 100) : 100
+
+          return {
+            estudianteId: est.id,
+            nombre: est.nombre,
+            apellido: est.apellido,
+            curso: est.curso?.nombre || 'Sin curso',
+            porcentajeAsistencia: porcentaje,
+            diasAusente: ausente
+          }
+        })
+        .filter(est => est.porcentajeAsistencia < porcentajeMinimo)
+        .sort((a, b) => a.porcentajeAsistencia - b.porcentajeAsistencia) // Menor porcentaje primero
+
+      return resultado
+    }
+  )
 }
 
 module.exports = {
