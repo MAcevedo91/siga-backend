@@ -4,6 +4,7 @@ const { registrarAuditoria } = require('./auditoriaService')
 const { getIO } = require('../utils/socket')
 const logger = require('../utils/logger')
 const DOMPurify = require('isomorphic-dompurify')
+const mensajeOfflineQueue = require('../queues/mensajeOfflineQueue')
 
 // =============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD
@@ -149,20 +150,31 @@ const enviarMensaje = async (tenantId, conversacionId, remitenteId, contenido, a
     .select('usuario_id')
     .eq('conversacion_id', conversacionId)
 
-  // Emitir evento Socket.io
+  // Emitir evento Socket.io y verificar usuarios offline
   const io = getIO()
   const participantesIds = participantes.map(p => p.usuario_id)
 
   for (const userId of participantesIds) {
     if (userId !== remitenteId) {
+      // Emit Socket.io event
       io.to(`user-${userId}`).emit('mensaje:nuevo', {
         conversacionId,
         mensaje
       })
+
+      // Check if user is online (Socket.io adapter)
+      const sockets = await io.in(`user-${userId}`).allSockets()
+
+      if (sockets.size === 0) {
+        // Usuario offline - encolar email
+        await mensajeOfflineQueue.add(
+          { userId, mensaje, conversacionId },
+          { priority: 3 } // Priority Media
+        )
+        logger.info(`Usuario ${userId} offline - email encolado`)
+      }
     }
   }
-
-  // TODO: Encolar email para usuarios offline (se implementará en Task 4)
 
   // Auditoría
   await registrarAuditoria({

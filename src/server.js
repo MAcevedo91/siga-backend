@@ -12,6 +12,8 @@ const { initSocketServer } = require('./sockets')
 const cron = require('node-cron')
 const alertaAusentismoQueue = require('./queues/alertaAusentismoQueue')
 const { procesarAlertaAusentismo } = require('./jobs/alertaAusentismoJob')
+const mensajeOfflineQueue = require('./queues/mensajeOfflineQueue')
+const { procesarMensajeOffline } = require('./jobs/mensajeOfflineJob')
 
 // Initialize email worker
 if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
@@ -22,6 +24,11 @@ if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
 // Process alerta ausentismo queue
 alertaAusentismoQueue.process(async (job) => {
   return await procesarAlertaAusentismo(job)
+})
+
+// Process mensaje offline queue
+mensajeOfflineQueue.process(async (job) => {
+  return await procesarMensajeOffline(job)
 })
 
 // Schedule daily at 9 AM for all tenants
@@ -86,6 +93,7 @@ const start = async () => {
     httpServer.close()
     socketHttpServer.close()
     await alertaAusentismoQueue.close()
+    await mensajeOfflineQueue.close()
   })
 }
 
