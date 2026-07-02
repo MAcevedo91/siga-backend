@@ -5,6 +5,7 @@ const { invalidateIncidentes } = require('../utils/cacheInvalidator')
 const emailService          = require('./emailService')
 const notificacionesService = require('./notificacionesService')
 const logger                = require('../utils/logger')
+const { registrarAuditoria } = require('./auditoriaService')
 
 // =============================================================================
 // ESQUEMA DE VALIDACIÓN ZOD
@@ -253,20 +254,48 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
     }
   }
 
-  // 5. Invalidar cache después de crear incidente
+  // 5. Registrar auditoría de creación
+  await registrarAuditoria({
+    tenantId,
+    userId: usuarioId,
+    accion: 'CREATE',
+    tabla: 'incidentes',
+    registroId: incidente.id,
+    datosBefore: null,
+    datosAfter: incidente
+  }).catch(err => {
+    logger.error('Error registering audit', {
+      error: err.message,
+      incidenteId: incidente.id
+    })
+  })
+
+  // 6. Invalidar cache después de crear incidente
   await invalidateIncidentes(tenantId)
 
-  // 6. Retornar incidente completo
+  // 7. Retornar incidente completo
   return obtenerIncidente(incidente.id, tenantId)
 }
 
 /**
  * Cambia el estado de un incidente validando las transiciones permitidas.
  */
-const cambiarEstado = async (id, tenantId, nuevoEstado) => {
-  const incidente = await obtenerIncidente(id, tenantId)
+const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
+  // Get current state BEFORE update
+  const { data: before, error: beforeError } = await supabase
+    .from('incidentes')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single()
 
-  const estadoActual = incidente.estado
+  if (beforeError || !before) {
+    const err = new Error('Incidente no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  const estadoActual = before.estado
   const transicionPermitida = TRANSICIONES[estadoActual]
 
   if (!transicionPermitida || transicionPermitida !== nuevoEstado) {
@@ -277,20 +306,39 @@ const cambiarEstado = async (id, tenantId, nuevoEstado) => {
     throw err
   }
 
-  const { data, error } = await supabase
+  // Perform update
+  const { data: after, error } = await supabase
     .from('incidentes')
     .update({ estado: nuevoEstado })
     .eq('id', id)
     .eq('tenant_id', tenantId)
-    .select('id, estado, fecha_creacion')
+    .select('*')
     .single()
 
   if (error) throw error
 
+  // Register audit with diff
+  if (userId) {
+    await registrarAuditoria({
+      tenantId,
+      userId,
+      accion: 'UPDATE',
+      tabla: 'incidentes',
+      registroId: id,
+      datosBefore: before,
+      datosAfter: after
+    }).catch(err => {
+      logger.error('Error registering audit', {
+        error: err.message,
+        incidenteId: id
+      })
+    })
+  }
+
   // Invalidar cache después de cambiar estado
   await invalidateIncidentes(tenantId)
 
-  return data
+  return after
 }
 
 /**

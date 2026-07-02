@@ -77,7 +77,8 @@ const cambiarEstadoHandler = async (req, res, next) => {
     const incidente = await incidentesService.cambiarEstado(
       req.params.id,
       req.user.tenant_id,
-      estado
+      estado,
+      req.user.user_id
     )
 
     res.status(200).json({
