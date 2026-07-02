@@ -92,6 +92,9 @@ async function getEstudiantesConRiesgo(tenantId, minScore = 0) {
     .eq('tenant_id', tenantId)
 
   if (error) throw new Error(error.message)
+  if (!estudiantes || estudiantes.length === 0) {
+    return []
+  }
 
   // OPTIMIZATION: Fetch ALL incidents for ALL students in ONE query
   const now = new Date()
