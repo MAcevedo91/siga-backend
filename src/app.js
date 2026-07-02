@@ -93,6 +93,9 @@ app.use('/api/v1/notificaciones', require('./routes/notificaciones.routes'))
 // Analytics routes (authenticated, cached)
 app.use('/api/v1/analytics', require('./routes/analytics.routes'))
 
+// Search routes (authenticated)
+app.use('/api/v1/search', require('./routes/search.routes'))
+
 app.use('/api/v1', routes)
 
 // =============================================================================
