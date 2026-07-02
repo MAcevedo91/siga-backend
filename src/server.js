@@ -10,6 +10,12 @@ const logger     = require('./utils/logger')
 const { testConnection } = require('./utils/db')
 const { initSocketServer } = require('./sockets')
 
+// Initialize email worker
+if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
+  require('./workers/emailWorker')
+  logger.info('Email worker enabled')
+}
+
 const PORT = process.env.PORT || 3000
 const SOCKET_PORT = process.env.SOCKET_PORT || 3001
 
