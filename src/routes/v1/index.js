@@ -15,6 +15,7 @@ router.use('/dashboard',   require('../dashboard.routes'))
 router.use('/asistencia',  require('../asistencia.routes'))
 router.use('/riesgo',      require('../riesgo'))
 router.use('/reportes',    require('../reportes'))
+router.use('/mensajes',    require('./mensajes'))
 
 // Additional v1 routes that were mounted separately in app.js
 // These are now consolidated here for consistency
