@@ -90,6 +90,9 @@ app.use(setTenantContext)
 // Notificaciones routes (authenticated)
 app.use('/api/v1/notificaciones', require('./routes/notificaciones.routes'))
 
+// Analytics routes (authenticated, cached)
+app.use('/api/v1/analytics', require('./routes/analytics.routes'))
+
 app.use('/api/v1', routes)
 
 // =============================================================================
