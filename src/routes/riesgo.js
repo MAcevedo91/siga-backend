@@ -1,10 +1,10 @@
 const express = require('express')
 const router = express.Router()
 const { calcularRiesgoEstudiante, getEstudiantesConRiesgo } = require('../services/riesgoService')
-const authMiddleware = require('../middlewares/auth')
+const authenticateToken = require('../middlewares/authenticateToken')
 
 // GET /api/v1/riesgo/estudiante/:id
-router.get('/estudiante/:id', authMiddleware, async (req, res) => {
+router.get('/estudiante/:id', authenticateToken, async (req, res) => {
   try {
     const estudianteId = parseInt(req.params.id)
     const tenantId = req.user.tenant_id
@@ -17,7 +17,7 @@ router.get('/estudiante/:id', authMiddleware, async (req, res) => {
 })
 
 // GET /api/v1/riesgo/estudiantes?minScore=50
-router.get('/estudiantes', authMiddleware, async (req, res) => {
+router.get('/estudiantes', authenticateToken, async (req, res) => {
   try {
     const tenantId = req.user.tenant_id
     const minScore = parseInt(req.query.minScore) || 0
