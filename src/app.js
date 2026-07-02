@@ -52,7 +52,7 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
   credentials: true,
 }))
 
