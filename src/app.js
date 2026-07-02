@@ -6,9 +6,12 @@ const requestIdMiddleware = require('./middlewares/requestId')
 const loggingMiddleware   = require('./middlewares/logging')
 const securityMiddleware  = require('./middlewares/security')
 const { generalLimiter }  = require('./middlewares/rateLimiter')
+const apiVersion          = require('./middlewares/apiVersion')
 
 // Application middlewares
 const routes           = require('./routes')
+const v1Routes         = require('./routes/v1')
+const v2Routes         = require('./routes/v2')
 const auditLogger      = require('./middlewares/auditLogger')
 const authenticateToken = require('./middlewares/authenticateToken')
 const setTenantContext  = require('./middlewares/setTenantContext')
@@ -56,6 +59,9 @@ app.use(cors({
 // 5. General rate limiter (applies to all routes)
 app.use(generalLimiter)
 
+// 6. API Versioning (extract version from URL path)
+app.use(apiVersion)
+
 // =============================================================================
 // BODY PARSERS
 // =============================================================================
@@ -72,6 +78,22 @@ app.use(auditLogger)
 // =============================================================================
 app.use('/api/v1/auth', require('./routes/auth.routes'))
 app.use('/api/v1/health', (req, res) => res.status(200).json({
+  status: 'success',
+  message: 'Servidor operativo',
+  data: { timestamp: new Date().toISOString() },
+}))
+
+// V2 public routes (before authentication)
+app.use('/api/v2/health', (req, res) => res.status(200).json({
+  version: 'v2',
+  status: 'ok',
+  message: 'V2 API is available but not yet implemented',
+  timestamp: new Date().toISOString()
+}))
+
+// Legacy /api/auth route (backward compatibility - redirects to v1)
+app.use('/api/auth', require('./routes/auth.routes'))
+app.use('/api/health', (req, res) => res.status(200).json({
   status: 'success',
   message: 'Servidor operativo',
   data: { timestamp: new Date().toISOString() },
@@ -96,7 +118,18 @@ app.use('/api/v1/analytics', require('./routes/analytics.routes'))
 // Search routes (authenticated)
 app.use('/api/v1/search', require('./routes/search.routes'))
 
-app.use('/api/v1', routes)
+// Mount v1 routes
+app.use('/api/v1', v1Routes)
+
+// Mount v2 routes (future)
+app.use('/api/v2', v2Routes)
+
+// Legacy routes (backward compatibility) - default to v1
+// Note: auth and health are already handled above before authentication
+app.use('/api/notificaciones', require('./routes/notificaciones.routes'))
+app.use('/api/analytics', require('./routes/analytics.routes'))
+app.use('/api/search', require('./routes/search.routes'))
+app.use('/api', v1Routes)
 
 // =============================================================================
 // MANEJO GLOBAL DE ERRORES
