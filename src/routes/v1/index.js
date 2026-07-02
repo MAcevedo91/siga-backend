@@ -16,6 +16,7 @@ router.use('/asistencia',  require('../asistencia.routes'))
 router.use('/riesgo',      require('../riesgo'))
 router.use('/reportes',    require('../reportes'))
 router.use('/mensajes',    require('./mensajes'))
+router.use('/broadcasts',  require('./broadcasts'))
 
 // Additional v1 routes that were mounted separately in app.js
 // These are now consolidated here for consistency
