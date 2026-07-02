@@ -158,8 +158,113 @@ const getAsistenciaEstudiante = async (tenantId, estudianteId, fechaDesde, fecha
   return data
 }
 
+/**
+ * Calcula porcentaje de asistencia de un estudiante en un rango de fechas.
+ * Solo cuenta registros de día completo (bloque=NULL).
+ *
+ * @param {string} tenantId
+ * @param {string} estudianteId
+ * @param {string} fechaDesde - YYYY-MM-DD
+ * @param {string} fechaHasta - YYYY-MM-DD
+ * @returns {Promise<Object>} - { porcentaje, totalDias, presente, ausente, atrasado, justificado }
+ */
+const calcularPorcentajeAsistencia = async (tenantId, estudianteId, fechaDesde, fechaHasta) => {
+  // Query solo registros de día completo (bloque=NULL)
+  const { data, error } = await supabase
+    .from('asistencia')
+    .select('estado')
+    .eq('tenant_id', tenantId)
+    .eq('estudiante_id', estudianteId)
+    .gte('fecha', fechaDesde)
+    .lte('fecha', fechaHasta)
+    .is('bloque', null) // Solo día completo
+
+  if (error) {
+    logger.error('Error calculando porcentaje asistencia:', error)
+    throw new Error(`Error al calcular asistencia: ${error.message}`)
+  }
+
+  // Contar por estado
+  const totalDias = data.length
+  const presente = data.filter(a => a.estado === 'Presente').length
+  const ausente = data.filter(a => a.estado === 'Ausente').length
+  const atrasado = data.filter(a => a.estado === 'Atrasado').length
+  const justificado = data.filter(a => a.estado === 'Justificado').length
+
+  // Porcentaje: solo "Presente" cuenta como asistencia efectiva
+  const porcentaje = totalDias > 0 ? Math.round((presente / totalDias) * 100) : 0
+
+  return {
+    porcentaje,
+    totalDias,
+    presente,
+    ausente,
+    atrasado,
+    justificado
+  }
+}
+
+/**
+ * Obtiene estudiantes con riesgo de ausentismo (< porcentaje mínimo en últimos 30 días).
+ *
+ * @param {string} tenantId
+ * @param {number} porcentajeMinimo - Default 85 (alerta si < 85%)
+ * @returns {Promise<Array>} - [{ estudianteId, nombre, apellido, curso, porcentajeAsistencia, diasAusente }]
+ */
+const getEstudiantesEnRiesgo = async (tenantId, porcentajeMinimo = 85) => {
+  // Calcular rango últimos 30 días
+  const fechaHasta = new Date().toISOString().split('T')[0]
+  const fechaDesde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  // Query estudiantes con sus asistencias (últimos 30 días)
+  const { data: estudiantes, error } = await supabase
+    .from('estudiantes')
+    .select(`
+      id,
+      nombre,
+      apellido,
+      curso:cursos!inner(nombre),
+      asistencia!left(estado)
+    `)
+    .eq('tenant_id', tenantId)
+    .gte('asistencia.fecha', fechaDesde)
+    .lte('asistencia.fecha', fechaHasta)
+    .is('asistencia.bloque', null) // Solo día completo
+
+  if (error) {
+    logger.error('Error obteniendo estudiantes en riesgo:', error)
+    throw new Error(`Error al obtener estudiantes: ${error.message}`)
+  }
+
+  // Calcular porcentaje por estudiante
+  const resultado = estudiantes
+    .map(est => {
+      const asistencias = est.asistencia || []
+      const totalDias = asistencias.length
+      const presente = asistencias.filter(a => a.estado === 'Presente').length
+      const ausente = asistencias.filter(a => a.estado === 'Ausente').length
+
+      const porcentaje = totalDias > 0 ? Math.round((presente / totalDias) * 100) : 100
+
+      return {
+        estudianteId: est.id,
+        nombre: est.nombre,
+        apellido: est.apellido,
+        curso: est.curso?.nombre || 'Sin curso',
+        porcentajeAsistencia: porcentaje,
+        diasAusente: ausente
+      }
+    })
+    .filter(est => est.porcentajeAsistencia < porcentajeMinimo)
+    .sort((a, b) => a.porcentajeAsistencia - b.porcentajeAsistencia) // Menor porcentaje primero
+
+  return resultado
+}
+
 module.exports = {
   registrarAsistencia,
   getAsistenciaCurso,
-  getAsistenciaEstudiante
+  getAsistenciaEstudiante,
+  calcularPorcentajeAsistencia,
+  getEstudiantesEnRiesgo
 }
