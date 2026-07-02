@@ -2,3 +2,8 @@
 process.env.SUPABASE_URL = 'https://test.supabase.co'
 process.env.SUPABASE_SERVICE_KEY = 'test-service-key'
 process.env.NODE_ENV = 'test'
+
+// Mock isomorphic-dompurify to avoid ESM issues in Jest
+jest.mock('isomorphic-dompurify', () => ({
+  sanitize: jest.fn((input) => input)
+}))
