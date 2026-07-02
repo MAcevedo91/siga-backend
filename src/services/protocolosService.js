@@ -1,5 +1,8 @@
-const { z }        = require('zod')
-const { supabase } = require('../utils/db')
+const { z }                 = require('zod')
+const { supabase }          = require('../utils/db')
+const emailService          = require('./emailService')
+const notificacionesService = require('./notificacionesService')
+const logger                = require('../utils/logger')
 
 // =============================================================================
 // ESQUEMA DE VALIDACIÓN ZOD
@@ -141,6 +144,74 @@ const crearProtocolo = async (tenantId, usuarioId, body) => {
     .single()
 
   if (error) throw error
+
+  // 4. Send email to apoderado about protocol opening
+  const { data: estudiante } = await supabase
+    .from('estudiantes')
+    .select(`
+      id, nombre, apellido,
+      apoderados ( email, nombre )
+    `)
+    .eq('id', estudiante_id)
+    .single()
+
+  const { data: tipoProtocolo } = await supabase
+    .from('tipos_protocolo')
+    .select('nombre')
+    .eq('id', tipo_protocolo_id)
+    .single()
+
+  const { data: usuario } = await supabase
+    .from('usuarios')
+    .select('nombre, apellido')
+    .eq('id', usuarioId)
+    .single()
+
+  if (estudiante?.apoderados?.email) {
+    emailService.enviarEmailProtocoloAbierto({
+      apoderadoEmail: estudiante.apoderados.email,
+      estudianteNombre: `${estudiante.nombre} ${estudiante.apellido}`,
+      protocoloTipo: tipoProtocolo?.nombre || 'Protocolo RICE',
+      responsableNombre: usuario ? `${usuario.nombre} ${usuario.apellido}` : 'Equipo SIGA',
+      fecha: new Date(fecha_apertura).toLocaleDateString('es-CL')
+    }).catch(err => {
+      logger.error('Error sending protocolo email', {
+        protocoloId: data.id,
+        error: err.message
+      })
+    })
+
+    logger.info('Email protocolo abierto queued', {
+      protocoloId: data.id,
+      apoderadoEmail: estudiante.apoderados.email
+    })
+  }
+
+  // 5. Create notifications for admins and coordinadores
+  const { data: usuarios } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .in('rol', ['Administrador', 'Coordinador'])
+
+  if (usuarios) {
+    for (const usr of usuarios) {
+      notificacionesService.crearNotificacion({
+        userId: usr.id,
+        tenantId: tenantId,
+        tipo: 'protocolo',
+        titulo: `Nuevo protocolo ${tipoProtocolo?.nombre || 'RICE'}`,
+        mensaje: `Se ha abierto un protocolo para ${estudiante?.nombre} ${estudiante?.apellido}`,
+        url: `/protocolos/${data.id}`
+      }).catch(err => {
+        logger.error('Error creating notification', {
+          error: err.message,
+          userId: usr.id,
+          protocoloId: data.id
+        })
+      })
+    }
+  }
 
   return obtenerProtocolo(data.id, tenantId)
 }
