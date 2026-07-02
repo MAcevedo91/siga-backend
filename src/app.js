@@ -87,6 +87,9 @@ app.use(setTenantContext)
 // =============================================================================
 // RUTAS PRIVADAS
 // =============================================================================
+// Notificaciones routes (authenticated)
+app.use('/api/v1/notificaciones', require('./routes/notificaciones.routes'))
+
 app.use('/api/v1', routes)
 
 // =============================================================================
