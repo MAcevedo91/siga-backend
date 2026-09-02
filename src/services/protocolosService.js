@@ -242,6 +242,7 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, observaciones) => {
   const update = {
     estado:        nuevoEstado,
     observaciones,
+    fecha_ultimo_avance: new Date().toISOString(),
   }
 
   // Al cerrar, registrar fecha_cierre automáticamente

@@ -10,6 +10,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/utils/seed.js",
+    "seed:reglas": "node src/utils/seedReglas.js",
     "lint": "eslint src/**/*.js",
     "test": "NODE_ENV=test jest",
     "test:watch": "NODE_ENV=test jest --watch",
