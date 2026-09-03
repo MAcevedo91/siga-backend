@@ -6,9 +6,13 @@ const {
   porCursoHandler,
   porGravedadHandler,
   tendenciaMensualHandler,
+  estudiantesEnRiesgoHandler
 } = require('../controllers/dashboardController')
 
 const router = Router()
+
+// Accesible para todos los roles autenticados
+router.get('/estudiantes-en-riesgo', cacheMiddleware(300), estudiantesEnRiesgoHandler)
 
 // Solo Administrador, Equipo de Formación y Directivo
 router.use(requireRole('Administrador', 'Equipo de Formación', 'Directivo'))

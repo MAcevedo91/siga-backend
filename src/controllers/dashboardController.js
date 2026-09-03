@@ -28,4 +28,17 @@ const tendenciaMensualHandler = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
-module.exports = { resumenHandler, porCursoHandler, porGravedadHandler, tendenciaMensualHandler }
+const estudiantesEnRiesgoHandler = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getEstudiantesEnRiesgo(req.user.tenant_id)
+    res.status(200).json({ status: 'success', message: 'Estudiantes en riesgo de comportamiento', data })
+  } catch (err) { next(err) }
+}
+
+module.exports = { 
+  resumenHandler, 
+  porCursoHandler, 
+  porGravedadHandler, 
+  tendenciaMensualHandler,
+  estudiantesEnRiesgoHandler 
+}
