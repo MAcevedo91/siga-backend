@@ -3,7 +3,7 @@ const logger = require('./logger')
 
 function initSentry() {
   if (!process.env.SENTRY_DSN) {
-    logger.warn('SENTRY_DSN not configured, skipping Sentry initialization')
+    logger.info('SENTRY_DSN not configured, skipping Sentry initialization (Dev mode)')
     return
   }
 

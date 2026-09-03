@@ -275,10 +275,27 @@ const listarTiposProtocolo = async () => {
   return data
 }
 
+/**
+ * Llama a la función RPC calcular_acciones_pendientes para obtener el estado del semáforo.
+ */
+const calcularAccionesPendientes = async (tenantId) => {
+  const { data, error } = await supabase
+    .rpc('calcular_acciones_pendientes', { p_tenant_id: tenantId })
+
+  if (error) {
+    const err = new Error(`Error al calcular acciones pendientes: ${error.message}`)
+    err.statusCode = 500
+    throw err
+  }
+
+  return data
+}
+
 module.exports = {
   listarProtocolos,
   obtenerProtocolo,
   crearProtocolo,
   cambiarEstado,
   listarTiposProtocolo,
+  calcularAccionesPendientes,
 }

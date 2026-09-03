@@ -107,10 +107,27 @@ const tiposProtocoloHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/protocolos/acciones-pendientes
+ */
+const accionesPendientesHandler = async (req, res, next) => {
+  try {
+    const acciones = await protocolosService.calcularAccionesPendientes(req.user.tenant_id)
+    res.status(200).json({
+      status: 'success',
+      message: 'Acciones pendientes calculadas exitosamente',
+      data: acciones,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   obtenerHandler,
   crearHandler,
   cambiarEstadoHandler,
   tiposProtocoloHandler,
+  accionesPendientesHandler,
 }
