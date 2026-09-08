@@ -72,23 +72,43 @@ const formatearErrorZod = (error) => {
 const buscarOCrearCurso = async (nombreCurso, tenantId) => {
   if (!nombreCurso) return null
 
+  const trimmed = nombreCurso.trim()
+
   // Buscar primero
   const { data: existente } = await supabase
     .from('cursos')
     .select('id')
     .eq('tenant_id', tenantId)
-    .ilike('nombre', nombreCurso.trim())
+    .ilike('nombre', trimmed)
     .single()
 
   if (existente) return existente.id
+
+  // Descomponer nivel y letra si el nombre termina con una letra (ej. "1° Básico A")
+  const match = trimmed.match(/^(.*?)\s+([A-Za-z0-9]{1,2})$/)
+  const nivel = match ? match[1].trim() : trimmed
+  const letra = match ? match[2].toUpperCase() : 'A'
+
+  // Obtener período académico activo para el tenant
+  const { data: periodos } = await supabase
+    .from('periodos_academicos')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('activo', true)
+    .order('anio', { ascending: false })
+    .limit(1)
+
+  const periodoId = (periodos && periodos.length > 0) ? periodos[0].id : null
 
   // Crear si no existe
   const { data: nuevo, error } = await supabase
     .from('cursos')
     .insert({
       tenant_id:      tenantId,
-      nombre:         nombreCurso.trim(),
-      nivel:          'Sin clasificar',
+      nombre:         trimmed,
+      nivel:          nivel,
+      letra:          letra,
+      periodo_id:     periodoId,
       anio_academico: new Date().getFullYear(),
     })
     .select('id')

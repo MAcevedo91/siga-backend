@@ -44,13 +44,29 @@ CREATE TABLE usuarios (
 );
 
 -- =============================================================================
+-- 2.1 PERIODOS ACADÉMICOS
+-- =============================================================================
+CREATE TABLE periodos_academicos (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    anio        INT NOT NULL,
+    fecha_inicio DATE,
+    fecha_fin    DATE,
+    activo      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_periodo_tenant UNIQUE (tenant_id, anio)
+);
+
+-- =============================================================================
 -- 3. CURSOS
 -- =============================================================================
 CREATE TABLE cursos (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id      UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    periodo_id     UUID REFERENCES periodos_academicos(id) ON DELETE RESTRICT,
     nombre         VARCHAR(50) NOT NULL,
     nivel          VARCHAR(50) NOT NULL,
+    letra          VARCHAR(5),
     anio_academico INT  NOT NULL
 );
 
@@ -223,6 +239,13 @@ CREATE TABLE auditoria (
 -- Usuarios
 CREATE INDEX idx_usuarios_tenant          ON usuarios(tenant_id);
 CREATE INDEX idx_usuarios_email           ON usuarios(tenant_id, email);
+
+-- Periodos Académicos
+CREATE INDEX idx_periodos_tenant_activo   ON periodos_academicos(tenant_id, activo);
+
+-- Cursos
+CREATE INDEX idx_cursos_periodo_nivel     ON cursos(tenant_id, periodo_id, nivel);
+CREATE INDEX idx_cursos_nivel_letra       ON cursos(tenant_id, nivel, letra);
 
 -- Estudiantes
 CREATE INDEX idx_estudiantes_tenant       ON estudiantes(tenant_id);
