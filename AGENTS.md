@@ -33,8 +33,9 @@ Revisa nuevamente todo el proyecto para verificar que:
 
 **Paso 5: Plan y ejecución de pruebas de verificación**
 Genera y presenta un plan detallado de pruebas estructurado para validar conjuntamente la funcionalidad antes de cualquier commit:
+- **Scripts de Base de Datos (DDL/Migraciones en Supabase)**: Cualquier modificación requerida en la base de datos (DDL, nuevas tablas, columnas, funciones, índices, RLS o scripts de retrocompatibilidad/backfill) debe ser proporcionada explícitamente en este paso con el bloque de código SQL listo para que **yo (el usuario)** lo copie y ejecute directamente en el **SQL Editor de Supabase** antes de ejecutar las pruebas funcionales.
 - Casos de prueba (escenarios positivos y negativos)
-- Pasos específicos y guiados para que yo (el usuario/desarrollador) pueda ejecutar y verificar cada prueba en terreno (comandos Jest, consultas SQL en Supabase, pruebas de endpoints con cURL/Postman)
+- Pasos específicos y guiados para que yo (el usuario/desarrollador) pueda ejecutar y verificar cada prueba en terreno (comandos Jest, consultas SQL de verificación en Supabase, pruebas de endpoints con cURL/Postman)
 - Criterios de aceptación claros
 - Validaciones de seguridad a verificar
 Espera a que yo ejecute las pruebas y te comparta los resultados para certificar el funcionamiento.
