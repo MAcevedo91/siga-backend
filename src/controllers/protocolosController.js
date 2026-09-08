@@ -87,6 +87,15 @@ const cambiarEstadoHandler = async (req, res, next) => {
       data: protocolo,
     })
   } catch (err) {
+    if (err.pasos_pendientes) {
+      return res.status(400).json({
+        status: 'error',
+        error: err.message,
+        message: err.message,
+        pasos_pendientes: err.pasos_pendientes,
+        statusCode: 400,
+      })
+    }
     next(err)
   }
 }
@@ -142,6 +151,29 @@ const listarPasosHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * PATCH /api/v1/protocolos/:id/pasos/:pasoId
+ */
+const actualizarPasoHandler = async (req, res, next) => {
+  try {
+    const pasoActualizado = await protocolosService.actualizarPasoProtocolo(
+      req.params.id,
+      req.params.pasoId,
+      req.user.tenant_id,
+      req.user.user_id || req.user.id,
+      req.body,
+      req.ip
+    )
+    res.status(200).json({
+      status: 'success',
+      message: 'Paso normativo actualizado exitosamente',
+      data: pasoActualizado,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   obtenerHandler,
@@ -150,4 +182,5 @@ module.exports = {
   tiposProtocoloHandler,
   accionesPendientesHandler,
   listarPasosHandler,
+  actualizarPasoHandler,
 }

@@ -2,6 +2,7 @@ const { z }                 = require('zod')
 const { supabase }          = require('../utils/db')
 const emailService          = require('./emailService')
 const notificacionesService = require('./notificacionesService')
+const { registrarAuditoria } = require('./auditoriaService')
 const logger                = require('../utils/logger')
 
 // =============================================================================
@@ -302,6 +303,27 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, observaciones) => {
     throw err
   }
 
+  // Regla de bloqueo estricto (Checklist RICE):
+  // Para avanzar a "Derivado" o "Cerrado", todos los pasos normativos deben estar completados
+  if (['Derivado', 'Cerrado'].includes(nuevoEstado)) {
+    const { data: pasosPendientes, error: errorPasos } = await supabase
+      .from('protocolo_pasos')
+      .select('id, orden, accion, plazo_dias')
+      .eq('protocolo_id', id)
+      .eq('tenant_id', tenantId)
+      .eq('completado', false)
+      .order('orden', { ascending: true })
+
+    if (errorPasos) throw errorPasos
+
+    if (pasosPendientes && pasosPendientes.length > 0) {
+      const err = new Error('No se puede avanzar el estado: existen pasos normativos pendientes')
+      err.statusCode = 400
+      err.pasos_pendientes = pasosPendientes
+      throw err
+    }
+  }
+
   const update = {
     estado:        nuevoEstado,
     observaciones,
@@ -393,6 +415,106 @@ const listarPasosProtocolo = async (protocoloId, tenantId) => {
   return pasos || []
 }
 
+/**
+ * Actualiza el estado de un paso normativo (certificación / observación).
+ * Exige observación obligatoria (mínimo 5 caracteres) al marcar como completado.
+ * Registra fecha_completado y responsable_id en servidor.
+ * Registra auditoría del cambio en la tabla auditoria.
+ */
+const actualizarPasoProtocolo = async (protocoloId, pasoId, tenantId, usuarioId, body, ip) => {
+  const { completado, observacion } = body
+
+  if (typeof completado !== 'boolean') {
+    const err = new Error('El campo "completado" es requerido y debe ser un valor booleano')
+    err.statusCode = 400
+    throw err
+  }
+
+  const observacionLimpia = observacion ? observacion.trim() : ''
+
+  if (completado && observacionLimpia.length < 5) {
+    const err = new Error('La observación es obligatoria al completar un paso y debe tener al menos 5 caracteres')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 1. Validar que el protocolo exista y pertenezca al tenant
+  const { data: prot, error: protError } = await supabase
+    .from('protocolos_rice')
+    .select('id, estado')
+    .eq('id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (protError || !prot) {
+    const err = new Error('Protocolo no encontrado o no pertenece a este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  // Si el protocolo ya está cerrado, no se pueden modificar los pasos
+  if (prot.estado === 'Cerrado') {
+    const err = new Error('No se pueden modificar los pasos de un protocolo cerrado')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 2. Obtener estado anterior del paso
+  const { data: pasoActual, error: pasoError } = await supabase
+    .from('protocolo_pasos')
+    .select('*')
+    .eq('id', pasoId)
+    .eq('protocolo_id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (pasoError || !pasoActual) {
+    const err = new Error('Paso normativo no encontrado o no pertenece a este protocolo')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 3. Preparar datos de actualización
+  const updateData = {
+    completado,
+    fecha_completado: completado ? new Date().toISOString() : null,
+    responsable_id: completado ? usuarioId : null,
+    observacion: observacionLimpia || null,
+  }
+
+  const { data: pasoActualizado, error: updateError } = await supabase
+    .from('protocolo_pasos')
+    .update(updateData)
+    .eq('id', pasoId)
+    .eq('tenant_id', tenantId)
+    .select(`
+      id, orden, accion, plazo_dias, completado, fecha_completado, observacion, created_at, updated_at,
+      responsable:usuarios ( id, nombre, apellido, rol )
+    `)
+    .single()
+
+  if (updateError) throw updateError
+
+  // 4. Registrar en auditoría
+  await registrarAuditoria({
+    tenantId,
+    userId: usuarioId,
+    accion: 'UPDATE',
+    tabla: 'protocolo_pasos',
+    registroId: pasoId,
+    datosBefore: pasoActual,
+    datosAfter: pasoActualizado,
+    ip: ip || null,
+  }).catch(err => {
+    logger.error('Error al registrar auditoría en actualización de paso', {
+      pasoId,
+      error: err.message,
+    })
+  })
+
+  return pasoActualizado
+}
+
 module.exports = {
   listarProtocolos,
   obtenerProtocolo,
@@ -401,4 +523,5 @@ module.exports = {
   listarTiposProtocolo,
   calcularAccionesPendientes,
   listarPasosProtocolo,
+  actualizarPasoProtocolo,
 }

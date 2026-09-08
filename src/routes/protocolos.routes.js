@@ -8,6 +8,7 @@ const {
   tiposProtocoloHandler,
   accionesPendientesHandler,
   listarPasosHandler,
+  actualizarPasoHandler,
 } = require('../controllers/protocolosController')
 
 const router = Router()
@@ -36,6 +37,11 @@ router.post('/',
 router.patch('/:id/estado',
   requireRole('Administrador', 'Equipo de Formación'),
   cambiarEstadoHandler
+)
+
+router.patch('/:id/pasos/:pasoId',
+  requireRole('Administrador', 'Equipo de Formación'),
+  actualizarPasoHandler
 )
 
 module.exports = router
