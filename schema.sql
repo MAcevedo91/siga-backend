@@ -65,6 +65,8 @@ CREATE TABLE estudiantes (
     apellido         VARCHAR(100) NOT NULL,
     curso_id         UUID REFERENCES cursos(id) ON DELETE SET NULL,
     fecha_nacimiento DATE,
+    es_pie           BOOLEAN NOT NULL DEFAULT FALSE,
+    direccion        VARCHAR(255),
     activo           BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT unique_rut_per_tenant UNIQUE (tenant_id, rut)
 );
@@ -81,6 +83,7 @@ CREATE TABLE apoderados (
     rut           VARCHAR(12),
     email         VARCHAR(255),
     telefono      VARCHAR(20),
+    direccion     VARCHAR(255),
     es_titular    BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -225,6 +228,7 @@ CREATE INDEX idx_usuarios_email           ON usuarios(tenant_id, email);
 CREATE INDEX idx_estudiantes_tenant       ON estudiantes(tenant_id);
 CREATE INDEX idx_estudiantes_curso        ON estudiantes(curso_id);
 CREATE INDEX idx_estudiantes_activo       ON estudiantes(tenant_id, activo);
+CREATE INDEX idx_estudiantes_pie          ON estudiantes(tenant_id, es_pie);
 
 -- Incidentes
 CREATE INDEX idx_incidentes_tenant        ON incidentes(tenant_id);
