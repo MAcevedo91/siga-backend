@@ -210,6 +210,31 @@ const pdfHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/estudiantes/:id/antecedentes-escalada
+ * Analiza antecedentes disciplinarios recientes del estudiante (últimos 45 y 30 días)
+ * para detectar reincidencia en el mismo ámbito o escalada rápida de gravedad.
+ */
+const antecedentesEscaladaHandler = async (req, res, next) => {
+  try {
+    const { getAntecedentesEscalada } = require('../services/alertasService')
+    const diagnostico = await getAntecedentesEscalada(
+      req.user.tenant_id,
+      req.params.id
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: diagnostico.tiene_alerta
+        ? 'Se han detectado patrones de riesgo o reincidencia'
+        : 'Estudiante sin alertas activas de convivencia',
+      data: diagnostico,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   perfilHandler,
@@ -217,4 +242,6 @@ module.exports = {
   actualizarHandler,
   importarHandler,
   pdfHandler,
+  antecedentesEscaladaHandler,
 }
+

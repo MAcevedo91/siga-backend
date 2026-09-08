@@ -200,10 +200,14 @@ const getEstudiantesEnRiesgo = async (tenantId) => {
   return enRiesgo
 }
 
+const { getAntecedentesEscalada } = require('./alertasService')
+
 module.exports = {
   getResumen,
   getIncidentesPorCurso,
   getIncidentesPorGravedad,
   getTendenciaMensual,
-  getEstudiantesEnRiesgo
+  getEstudiantesEnRiesgo,
+  getAntecedentesEscalada,
 }
+
