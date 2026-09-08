@@ -129,15 +129,25 @@ const getTendenciaMensual = async (tenantId) => {
 }
 
 /**
- * Retorna estudiantes cuyo comportamiento en los últimos 30 días supera el umbral de riesgo
+ * Retorna estudiantes cuyo comportamiento en la ventana configurada supera el umbral de riesgo
  */
 const getEstudiantesEnRiesgo = async (tenantId) => {
-  // Fecha de hace 30 días
-  const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const dateStr = thirtyDaysAgo.toISOString().split('T')[0]
+  // 1. Obtener parámetros configurados para el tenant (con fallback)
+  const { data: config } = await supabase
+    .from('configuracion_tenant')
+    .select('umbral_riesgo, ventana_dias_riesgo')
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
 
-  // Consultar incidentes de los últimos 30 días y los estudiantes asociados
+  const umbralRiesgo = config?.umbral_riesgo ?? UMBRAL_RIESGO_COMPORTAMIENTO
+  const ventanaDias = config?.ventana_dias_riesgo ?? 30
+
+  // Fecha calculada según la ventana en días configurada
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - ventanaDias)
+  const dateStr = cutoffDate.toISOString().split('T')[0]
+
+  // Consultar incidentes de la ventana y los estudiantes asociados
   // Usamos inner join en estudiantes para asegurar que pertenezcan al tenant
   const { data, error } = await supabase
     .from('incidente_estudiantes')
@@ -187,18 +197,18 @@ const getEstudiantesEnRiesgo = async (tenantId) => {
       puntosPorGravedad = 5
     }
 
-    // Fórmula: (1 por estar en últimos 30 días * 2) + (puntos_gravedad)
-    // Se suma por CADA incidente individualmente.
+    // Fórmula: (1 por estar en ventana * 2) + (puntos_gravedad)
     current.score_riesgo += (1 * 2) + puntosPorGravedad
   }
 
-  // Filtrar los que superan el umbral y ordenar
+  // Filtrar los que superan el umbral dinámico y ordenar
   const enRiesgo = Array.from(estudiantesMap.values())
-    .filter(e => e.score_riesgo >= UMBRAL_RIESGO_COMPORTAMIENTO)
+    .filter(e => e.score_riesgo >= umbralRiesgo)
     .sort((a, b) => b.score_riesgo - a.score_riesgo)
 
   return enRiesgo
 }
+
 
 const { getAntecedentesEscalada } = require('./alertasService')
 

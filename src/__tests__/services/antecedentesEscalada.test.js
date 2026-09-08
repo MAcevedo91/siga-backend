@@ -54,6 +54,13 @@ describe('alertasService — Motor de Detección de Escalada y Reincidencia (HU 
             }),
           }
         }
+        if (table === 'configuracion_tenant') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          }
+        }
         if (table === 'incidente_estudiantes') {
           return {
             select: jest.fn().mockReturnThis(),
@@ -119,6 +126,13 @@ describe('alertasService — Motor de Detección de Escalada y Reincidencia (HU 
               data: { id: mockEstudianteId, nombre: 'Matías', apellido: 'Gómez' },
               error: null,
             }),
+          }
+        }
+        if (table === 'configuracion_tenant') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
           }
         }
         if (table === 'incidente_estudiantes') {
@@ -187,6 +201,13 @@ describe('alertasService — Motor de Detección de Escalada y Reincidencia (HU 
               data: { id: mockEstudianteId, nombre: 'Lucas', apellido: 'Silva' },
               error: null,
             }),
+          }
+        }
+        if (table === 'configuracion_tenant') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
           }
         }
         if (table === 'incidente_estudiantes') {
@@ -258,6 +279,13 @@ describe('alertasService — Motor de Detección de Escalada y Reincidencia (HU 
             }),
           }
         }
+        if (table === 'configuracion_tenant') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          }
+        }
         if (table === 'incidente_estudiantes') {
           return {
             select: jest.fn().mockReturnThis(),
@@ -317,6 +345,13 @@ describe('alertasService — Motor de Detección de Escalada y Reincidencia (HU 
               data: { id: mockEstudianteId, nombre: 'Esteban', apellido: 'Muñoz' },
               error: null,
             }),
+          }
+        }
+        if (table === 'configuracion_tenant') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
           }
         }
         if (table === 'incidente_estudiantes') {

@@ -41,18 +41,29 @@ async function getAntecedentesEscalada(tenantId, estudianteId) {
     throw err
   }
 
-  // 2. Definir ventanas de análisis temporal
-  const hoy = new Date()
-  const hace45Dias = new Date(hoy.getTime() - 45 * 24 * 60 * 60 * 1000)
-  const hace30Dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000)
+  // 2. Definir ventanas de análisis temporal desde configuración (con fallback por defecto)
+  const { data: config } = await supabase
+    .from('configuracion_tenant')
+    .select('ventana_dias_reincidencia, ventana_dias_escalada, ventana_dias_riesgo')
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
 
-  const fecha45Str = hace45Dias.toISOString().split('T')[0]
+  const diasReincidencia = config?.ventana_dias_reincidencia ?? 45
+  const diasEscalada = config?.ventana_dias_escalada ?? 15
+  const diasVentanaGravedad = config?.ventana_dias_riesgo ?? 30
+
+  const hoy = new Date()
+  const haceReincidencia = new Date(hoy.getTime() - diasReincidencia * 24 * 60 * 60 * 1000)
+  const hace30Dias = new Date(hoy.getTime() - diasVentanaGravedad * 24 * 60 * 60 * 1000)
+
+  const fecha45Str = haceReincidencia.toISOString().split('T')[0]
   const fecha30Str = hace30Dias.toISOString().split('T')[0]
 
-  // 3. Consulta única optimizada: recuperar incidentes del estudiante en los últimos 45 días
+  // 3. Consulta única optimizada: recuperar incidentes del estudiante en la ventana máxima
   const { data: rows, error: errorInc } = await supabase
     .from('incidente_estudiantes')
     .select(`
+
       incidente_id,
       es_victima,
       observacion,
@@ -121,8 +132,9 @@ async function getAntecedentesEscalada(tenantId, estudianteId) {
         const gravedadPosterior = incidentes30d[j].gravedad
         if (gravedadPosterior === 'Grave' || gravedadPosterior === 'Gravísima') {
           const diasDiferencia = calcularDiasDiferencia(incidentes30d[i].fecha, incidentes30d[j].fecha)
-          if (diasDiferencia >= 0 && diasDiferencia <= 15) {
+          if (diasDiferencia >= 0 && diasDiferencia <= diasEscalada) {
             patronEscalada.push({
+
               fecha_anterior: incidentes30d[i].fecha,
               gravedad_anterior: incidentes30d[i].gravedad,
               fecha_posterior: incidentes30d[j].fecha,
