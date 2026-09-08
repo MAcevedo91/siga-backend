@@ -7,6 +7,9 @@ jest.mock('../../services/auditoriaService')
 jest.mock('../../utils/socket', () => ({
   getIO: jest.fn(() => ({
     to: jest.fn().mockReturnThis(),
+    in: jest.fn().mockReturnValue({
+      allSockets: jest.fn().mockResolvedValue(new Set(['socket-1']))
+    }),
     emit: jest.fn()
   }))
 }))

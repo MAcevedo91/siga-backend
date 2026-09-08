@@ -10,6 +10,9 @@ jest.mock('../../services/notificacionService')
 jest.mock('../../utils/cacheInvalidator')
 jest.mock('../../services/emailService')
 jest.mock('../../services/notificacionesService')
+jest.mock('../../services/auditoriaService', () => ({
+  registrarAuditoria: jest.fn().mockResolvedValue(true)
+}))
 
 describe('incidentesService', () => {
   const mockTenantId = 'test-tenant-123'
@@ -306,11 +309,6 @@ describe('incidentesService', () => {
         single: jest.fn().mockResolvedValue({ data: mockIncidente, error: null })
       }
 
-      const mockEstudiantesQuery = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({ data: [], error: null })
-      }
-
       const mockUpdateQuery = {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -320,7 +318,6 @@ describe('incidentesService', () => {
 
       supabase.from = jest.fn()
         .mockReturnValueOnce(mockGetQuery)
-        .mockReturnValueOnce(mockEstudiantesQuery)
         .mockReturnValueOnce(mockUpdateQuery)
 
       invalidateIncidentes.mockResolvedValue(true)
@@ -345,14 +342,8 @@ describe('incidentesService', () => {
         single: jest.fn().mockResolvedValue({ data: mockIncidente, error: null })
       }
 
-      const mockEstudiantesQuery = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({ data: [], error: null })
-      }
-
       supabase.from = jest.fn()
         .mockReturnValueOnce(mockGetQuery)
-        .mockReturnValueOnce(mockEstudiantesQuery)
 
       await expect(incidentesService.cambiarEstado(1, mockTenantId, 'Cerrado')).rejects.toThrow('Transición de estado no permitida')
     })

@@ -56,7 +56,7 @@ const listarEstudiantes = async (tenantId, filtros = {}) => {
 
   let query = supabase
     .from('estudiantes')
-    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, activo')
+    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, activo, cursos ( id, nombre )')
     .eq('tenant_id', tenantId)
     .order('apellido', { ascending: true })
 
@@ -75,7 +75,12 @@ const listarEstudiantes = async (tenantId, filtros = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+  return (data || []).map((e) => {
+    if (e.cursos !== undefined) {
+      return { ...e, curso: e.cursos }
+    }
+    return e
+  })
 }
 
 /**
