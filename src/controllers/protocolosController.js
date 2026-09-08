@@ -123,6 +123,25 @@ const accionesPendientesHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/protocolos/:id/pasos
+ */
+const listarPasosHandler = async (req, res, next) => {
+  try {
+    const pasos = await protocolosService.listarPasosProtocolo(
+      req.params.id,
+      req.user.tenant_id
+    )
+    res.status(200).json({
+      status: 'success',
+      message: `${pasos.length} paso(s) encontrado(s)`,
+      data: pasos,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   obtenerHandler,
@@ -130,4 +149,5 @@ module.exports = {
   cambiarEstadoHandler,
   tiposProtocoloHandler,
   accionesPendientesHandler,
+  listarPasosHandler,
 }

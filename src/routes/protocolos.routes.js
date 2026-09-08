@@ -7,6 +7,7 @@ const {
   cambiarEstadoHandler,
   tiposProtocoloHandler,
   accionesPendientesHandler,
+  listarPasosHandler,
 } = require('../controllers/protocolosController')
 
 const router = Router()
@@ -22,8 +23,9 @@ router.get('/acciones-pendientes',
 )
 
 // Lectura — todos los roles autenticados
-router.get('/',    listarHandler)
-router.get('/:id', obtenerHandler)
+router.get('/',          listarHandler)
+router.get('/:id',       obtenerHandler)
+router.get('/:id/pasos', listarPasosHandler)
 
 // Escritura — solo Administrador y Equipo de Formación (Coordinador)
 router.post('/',

@@ -86,7 +86,12 @@ const obtenerProtocolo = async (id, tenantId) => {
     throw err
   }
 
-  return mapProtocolo(data)
+  const pasos = await listarPasosProtocolo(id, tenantId).catch(() => [])
+
+  return {
+    ...mapProtocolo(data),
+    pasos,
+  }
 }
 
 /**
@@ -144,6 +149,64 @@ const crearProtocolo = async (tenantId, usuarioId, body) => {
     .single()
 
   if (error) throw error
+
+  // 3.1 Inicializar automáticamente los pasos normativos (Checklist RICE)
+  const { data: reglas, error: reglasError } = await supabase
+    .from('reglas_protocolo')
+    .select('id, orden, accion, plazo_dias')
+    .eq('tenant_id', tenantId)
+    .eq('tipo_protocolo_id', tipo_protocolo_id)
+    .eq('activo', true)
+    .order('orden', { ascending: true })
+
+  if (reglasError) {
+    logger.error('Error al consultar reglas para inicializar pasos de protocolo', {
+      protocoloId: data.id,
+      error: reglasError.message,
+    })
+    // Reversión compensatoria para evitar protocolo huérfano sin checklist
+    await supabase.from('protocolos_rice').delete().eq('id', data.id).eq('tenant_id', tenantId)
+    const err = new Error(`Error al consultar las reglas normativas del protocolo: ${reglasError.message}`)
+    err.statusCode = 500
+    throw err
+  }
+
+  if (reglas && reglas.length > 0) {
+    const pasosParaInsertar = reglas.map(r => ({
+      tenant_id:        tenantId,
+      protocolo_id:     data.id,
+      regla_id:         r.id,
+      orden:            r.orden,
+      accion:           r.accion,
+      plazo_dias:       r.plazo_dias,
+      completado:       false,
+      fecha_completado: null,
+      responsable_id:   null,
+      observacion:      null,
+    }))
+
+    const { error: errorPasos } = await supabase
+      .from('protocolo_pasos')
+      .insert(pasosParaInsertar)
+
+    if (errorPasos) {
+      logger.error('Error al insertar pasos de protocolo en lote', {
+        protocoloId: data.id,
+        error: errorPasos.message,
+      })
+      // Reversión compensatoria
+      await supabase.from('protocolos_rice').delete().eq('id', data.id).eq('tenant_id', tenantId)
+      const err = new Error(`Error al inicializar el checklist normativo del protocolo: ${errorPasos.message}`)
+      err.statusCode = 500
+      throw err
+    }
+  } else {
+    logger.warn('No se encontraron reglas activas para el tipo de protocolo; no se inicializaron pasos', {
+      tenantId,
+      tipo_protocolo_id,
+      protocoloId: data.id,
+    })
+  }
 
   // 4. Send email to apoderado about protocol opening
   const { data: estudiante } = await supabase
@@ -291,6 +354,45 @@ const calcularAccionesPendientes = async (tenantId) => {
   return data
 }
 
+/**
+ * Lista los pasos de un protocolo específico ordenados por orden ascendente.
+ * Valida que el protocolo exista y pertenezca al tenantId (Aislamiento Multi-tenant).
+ */
+const listarPasosProtocolo = async (protocoloId, tenantId) => {
+  // 1. Validar que el protocolo exista y pertenezca al tenant
+  const { data: prot, error: protError } = await supabase
+    .from('protocolos_rice')
+    .select('id')
+    .eq('id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (protError || !prot) {
+    const err = new Error('Protocolo no encontrado o no pertenece a este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 2. Obtener pasos normativos
+  const { data: pasos, error: pasosError } = await supabase
+    .from('protocolo_pasos')
+    .select(`
+      id, orden, accion, plazo_dias, completado, fecha_completado, observacion, created_at, updated_at,
+      responsable:usuarios ( id, nombre, apellido, rol )
+    `)
+    .eq('protocolo_id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .order('orden', { ascending: true })
+
+  if (pasosError) {
+    const err = new Error(`Error al listar los pasos del protocolo: ${pasosError.message}`)
+    err.statusCode = 500
+    throw err
+  }
+
+  return pasos || []
+}
+
 module.exports = {
   listarProtocolos,
   obtenerProtocolo,
@@ -298,4 +400,5 @@ module.exports = {
   cambiarEstado,
   listarTiposProtocolo,
   calcularAccionesPendientes,
+  listarPasosProtocolo,
 }
