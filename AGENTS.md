@@ -56,4 +56,94 @@ Deja preparado y ejecutado el commit local en Git:
 
 ---
 
+## Reglas de Validación de Implementación 100% Funcional y Revisión de Código
+
+Un desarrollador senior debe realizar una validación exhaustiva en múltiples niveles antes de dar por completada cualquier implementación o revisión:
+
+### 1. Pruebas Unitarias
+- Escribir tests para cada función/método aislado.
+- Cubrir casos normales, casos límite y errores.
+- Asegurar cobertura de código mínima del **80-90%**.
+- Verificar que todas las pruebas pasen.
+
+### 2. Pruebas de Integración
+- Validar que los componentes interactúan correctamente.
+- Probar flujos end-to-end del sistema.
+- Verificar llamadas a APIs externas, bases de datos, etc.
+- Simular diferentes escenarios de integración.
+
+### 3. Code Review
+- Solicitar revisión por otros desarrolladores.
+- Verificar seguimiento de estándares de código.
+- Revisar lógica, seguridad y rendimiento.
+- Buscar deuda técnica o malas prácticas.
+
+### 4. Pruebas de Rendimiento
+- Medir tiempo de ejecución.
+- Analizar uso de memoria y CPU.
+- Verificar que cumple con requisitos de performance.
+- Identificar posibles cuellos de botella.
+
+### 5. Pruebas de Seguridad
+- Validar manejo correcto de inputs (inyecciones, XSS).
+- Verificar autenticación y autorización.
+- Revisar gestión de secretos y datos sensibles.
+- Usar herramientas como SAST si es aplicable.
+
+### 6. Pruebas de Compatibilidad
+- Verificar en múltiples navegadores (si es frontend).
+- Probar en diferentes versiones de dependencias.
+- Validar en sistemas operativos relevantes.
+- Comprobar con diferentes bases de datos si aplica.
+
+### 7. Validación Manual (QA)
+- Realizar pruebas exploratorias.
+- Verificar interfaces de usuario.
+- Probar casos de error y recuperación.
+- Validar experiencia del usuario.
+
+### 8. Documentación y Logging
+- Verificar que el código esté bien documentado.
+- Confirmar logs adecuados para debugging.
+- Actualizar documentación del proyecto.
+- Crear ejemplos de uso si es necesario.
+
+### 9. Verificación de Requisitos
+- Confirmar que cumple con especificaciones.
+- Validar criterios de aceptación.
+- Revisar cambios respecto a requisitos originales.
+- Documentar cualquier desviación.
+
+### 10. Entorno de Staging
+- Desplegar en ambiente de staging.
+- Realizar pruebas en ambiente similar a producción.
+- Verificar variables de configuración.
+- Probar con datos similares a los reales.
+
+### 11. Monitoreo Post-Deploy
+- Implementar métricas y alertas.
+- Monitorear comportamiento en producción.
+- Estar disponible para issues inmediatos.
+- Recopilar feedback de usuarios.
+
+### 12. Verificación de Regresión
+- Ejecutar suite completa de pruebas existentes.
+- Asegurar que no se rompió funcionalidad anterior.
+- Usar herramientas de testing automatizado.
+- Revisar cambios en historiales de errores.
+
+### Checklist Rápido para Senior:
+- [ ] Tests unitarios: ✓ Pasos + cobertura
+- [ ] Tests de integración: ✓ Flujos críticos
+- [ ] Code review aprobado
+- [ ] Performance validado
+- [ ] Seguridad revisada
+- [ ] Documentación actualizada
+- [ ] Staging probado
+- [ ] Sin regresiones detectadas
+- [ ] Logs y monitoreo en lugar
+- [ ] Requisitos confirmados
+
+---
+
 Cuando estés listo, comparte los detalles de la funcionalidad que necesitas implementar y comenzaremos por el Paso 1.
