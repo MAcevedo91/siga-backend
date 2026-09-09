@@ -215,9 +215,14 @@ const obtenerPerfil = async (id, tenantId) => {
     observacion:   item.observacion,
   }))
 
+  // Identificar apoderado titular (o el primero disponible) para compatibilidad
+  const listaApoderados = apoderados || []
+  const apoderadoTitular = listaApoderados.find(a => a.es_titular) || listaApoderados[0] || null
+
   return {
     ...estudiante,
-    apoderados: apoderados || [],
+    apoderado: apoderadoTitular,
+    apoderados: listaApoderados,
     incidentes,
   }
 }
