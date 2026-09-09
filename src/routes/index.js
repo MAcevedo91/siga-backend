@@ -12,5 +12,10 @@ router.use('/estudiantes', require('./estudiantes.routes'))
 router.use('/incidentes',  require('./incidentes.routes'))
 router.use('/protocolos',  require('./protocolos.routes'))
 router.use('/dashboard',   require('./dashboard.routes'))
+router.use('/auditoria',   require('./auditoria.routes'))
+router.use('/asistencia',  require('./asistencia.routes'))
+router.use('/cursos',      require('./cursos.routes'))
+router.use('/configuracion', require('./configuracion.routes'))
 
 module.exports = router
+

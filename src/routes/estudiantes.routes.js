@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const multer     = require('multer')
 const requireRole = require('../middlewares/requireRole')
+const cacheMiddleware = require('../middlewares/cache')
 const {
   listarHandler,
   perfilHandler,
@@ -8,7 +9,9 @@ const {
   actualizarHandler,
   importarHandler,
   pdfHandler,
+  antecedentesEscaladaHandler,
 } = require('../controllers/estudiantesController')
+
 
 const router = Router()
 
@@ -59,9 +62,13 @@ const uploadWithErrorHandling = (req, res, next) => {
 // RUTAS
 // ============================================================
 
-// Lectura — todos los roles autenticados
-router.get('/', listarHandler)
-router.get('/:id/perfil', perfilHandler)
+// Lectura — todos los roles autenticados (con cache 10min para perfil/lista general)
+router.get('/', cacheMiddleware(600), listarHandler)
+router.get('/:id/perfil', cacheMiddleware(600), perfilHandler)
+
+// Análisis predictivo y antecedentes — tiempo real (sin cache para reflejar incidentes inmediatos)
+router.get('/:id/antecedentes-escalada', antecedentesEscaladaHandler)
+
 
 // PDF — solo Administrador y Equipo de Formación
 router.get('/:id/pdf',

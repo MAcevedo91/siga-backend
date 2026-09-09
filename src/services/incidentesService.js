@@ -1,6 +1,11 @@
 const { z }                 = require('zod')
 const { supabase }          = require('../utils/db')
 const { crearAlerta }       = require('./notificacionService')
+const { invalidateIncidentes } = require('../utils/cacheInvalidator')
+const emailService          = require('./emailService')
+const notificacionesService = require('./notificacionesService')
+const logger                = require('../utils/logger')
+const { registrarAuditoria } = require('./auditoriaService')
 
 // =============================================================================
 // ESQUEMA DE VALIDACIÓN ZOD
@@ -182,34 +187,115 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
     throw estudiantesError
   }
 
-  // 4. Obtener nombre del primer estudiante para la notificación
+  // 4. Si gravedad es Grave o Gravísima, enviar email al apoderado y crear notificaciones
   if (gravedad === 'Grave' || gravedad === 'Gravísima') {
     const { data: primerEstudiante } = await supabase
       .from('estudiantes')
-      .select('nombre, apellido')
+      .select(`
+        id, nombre, apellido,
+        apoderados ( email, nombre )
+      `)
       .eq('id', estudiantes[0].estudiante_id)
       .single()
 
-    // Fire-and-forget
+    // Fire-and-forget alerta (legacy system)
     setImmediate(() => crearAlerta({
       ...incidente,
       estudiante_nombre: primerEstudiante
         ? `${primerEstudiante.nombre} ${primerEstudiante.apellido}`
         : 'Estudiante',
     }, tenantId))
+
+    // Send email to apoderado if email exists
+    if (primerEstudiante?.apoderados?.email) {
+      emailService.enviarEmailIncidenteGrave({
+        apoderadoEmail: primerEstudiante.apoderados.email,
+        estudianteNombre: `${primerEstudiante.nombre} ${primerEstudiante.apellido}`,
+        incidenteDescripcion: relato,
+        gravedadLabel: gravedad,
+        fecha: new Date(fecha).toLocaleDateString('es-CL')
+      }).catch(err => {
+        logger.error('Error sending incidente email', {
+          incidenteId: incidente.id,
+          error: err.message
+        })
+      })
+
+      logger.info('Email incidente grave queued', {
+        incidenteId: incidente.id,
+        apoderadoEmail: primerEstudiante.apoderados.email
+      })
+    }
+
+    // Create notifications for admins and coordinadores
+    const { data: usuarios } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .in('rol', ['Administrador', 'Coordinador'])
+
+    if (usuarios) {
+      for (const usuario of usuarios) {
+        notificacionesService.crearNotificacion({
+          userId: usuario.id,
+          tenantId: tenantId,
+          tipo: 'incidente',
+          titulo: `Nuevo incidente ${gravedad}`,
+          mensaje: `Se ha registrado un nuevo incidente: ${relato.substring(0, 100)}${relato.length > 100 ? '...' : ''}`,
+          url: `/incidentes/${incidente.id}`
+        }).catch(err => {
+          logger.error('Error creating notification', {
+            error: err.message,
+            userId: usuario.id,
+            incidenteId: incidente.id
+          })
+        })
+      }
+    }
   }
 
-  // 5. Retornar incidente completo
+  // 5. Registrar auditoría de creación
+  await registrarAuditoria({
+    tenantId,
+    userId: usuarioId,
+    accion: 'CREATE',
+    tabla: 'incidentes',
+    registroId: incidente.id,
+    datosBefore: null,
+    datosAfter: incidente
+  }).catch(err => {
+    logger.error('Error registering audit', {
+      error: err.message,
+      incidenteId: incidente.id
+    })
+  })
+
+  // 6. Invalidar cache después de crear incidente
+  await invalidateIncidentes(tenantId)
+
+  // 7. Retornar incidente completo
   return obtenerIncidente(incidente.id, tenantId)
 }
 
 /**
  * Cambia el estado de un incidente validando las transiciones permitidas.
  */
-const cambiarEstado = async (id, tenantId, nuevoEstado) => {
-  const incidente = await obtenerIncidente(id, tenantId)
+const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
+  // Get current state BEFORE update
+  const { data: before, error: beforeError } = await supabase
+    .from('incidentes')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single()
 
-  const estadoActual = incidente.estado
+  if (beforeError || !before) {
+    const err = new Error('Incidente no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  const estadoActual = before.estado
   const transicionPermitida = TRANSICIONES[estadoActual]
 
   if (!transicionPermitida || transicionPermitida !== nuevoEstado) {
@@ -220,16 +306,39 @@ const cambiarEstado = async (id, tenantId, nuevoEstado) => {
     throw err
   }
 
-  const { data, error } = await supabase
+  // Perform update
+  const { data: after, error } = await supabase
     .from('incidentes')
     .update({ estado: nuevoEstado })
     .eq('id', id)
     .eq('tenant_id', tenantId)
-    .select('id, estado, fecha_creacion')
+    .select('*')
     .single()
 
   if (error) throw error
-  return data
+
+  // Register audit with diff
+  if (userId) {
+    await registrarAuditoria({
+      tenantId,
+      userId,
+      accion: 'UPDATE',
+      tabla: 'incidentes',
+      registroId: id,
+      datosBefore: before,
+      datosAfter: after
+    }).catch(err => {
+      logger.error('Error registering audit', {
+        error: err.message,
+        incidenteId: id
+      })
+    })
+  }
+
+  // Invalidar cache después de cambiar estado
+  await invalidateIncidentes(tenantId)
+
+  return after
 }
 
 /**

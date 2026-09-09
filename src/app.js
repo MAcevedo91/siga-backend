@@ -1,8 +1,17 @@
 const express = require('express')
 const cors    = require('cors')
-const helmet  = require('helmet')
 
+// Infrastructure middlewares
+const requestIdMiddleware = require('./middlewares/requestId')
+const loggingMiddleware   = require('./middlewares/logging')
+const securityMiddleware  = require('./middlewares/security')
+const { generalLimiter }  = require('./middlewares/rateLimiter')
+const apiVersion          = require('./middlewares/apiVersion')
+
+// Application middlewares
 const routes           = require('./routes')
+const v1Routes         = require('./routes/v1')
+const v2Routes         = require('./routes/v2')
 const auditLogger      = require('./middlewares/auditLogger')
 const authenticateToken = require('./middlewares/authenticateToken')
 const setTenantContext  = require('./middlewares/setTenantContext')
@@ -10,14 +19,21 @@ const setTenantContext  = require('./middlewares/setTenantContext')
 const app = express()
 
 // =============================================================================
-// MIDDLEWARES DE SEGURIDAD
+// INFRASTRUCTURE MIDDLEWARE CHAIN
+// Order is critical: requestId → logging → security → CORS → rate limiting
 // =============================================================================
 
-// Helmet agrega headers de seguridad automáticamente:
-// X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, etc.
-app.use(helmet())
+// 1. Request ID (must be first to add req.id for all subsequent middlewares)
+app.use(requestIdMiddleware)
 
-// CORS — solo acepta orígenes explícitamente listados
+// 2. HTTP Request/Response Logging (uses req.id)
+app.use(loggingMiddleware)
+
+// 3. Security headers (Helmet + custom)
+// Replaces standalone helmet() call with security middleware that includes helmet
+app.use(securityMiddleware)
+
+// 4. CORS — solo acepta orígenes explícitamente listados
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',                          // Vite dev server (frontend)
   'http://localhost:4173',                          // Vite preview
@@ -36,9 +52,19 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
   credentials: true,
 }))
+
+// 5. General rate limiter (applies to all routes)
+app.use(generalLimiter)
+
+// 6. API Versioning (extract version from URL path)
+app.use(apiVersion)
+
+// =============================================================================
+// BODY PARSERS
+// =============================================================================
 
 // Parseo de JSON en el body de los requests
 app.use(express.json())
@@ -57,6 +83,22 @@ app.use('/api/v1/health', (req, res) => res.status(200).json({
   data: { timestamp: new Date().toISOString() },
 }))
 
+// V2 public routes (before authentication)
+app.use('/api/v2/health', (req, res) => res.status(200).json({
+  version: 'v2',
+  status: 'ok',
+  message: 'V2 API is available but not yet implemented',
+  timestamp: new Date().toISOString()
+}))
+
+// Legacy /api/auth route (backward compatibility - redirects to v1)
+app.use('/api/auth', require('./routes/auth.routes'))
+app.use('/api/health', (req, res) => res.status(200).json({
+  status: 'success',
+  message: 'Servidor operativo',
+  data: { timestamp: new Date().toISOString() },
+}))
+
 // =============================================================================
 // MIDDLEWARES GLOBALES PARA RUTAS PRIVADAS
 // Todas las rutas debajo de este punto requieren token válido y tenant_id
@@ -67,7 +109,27 @@ app.use(setTenantContext)
 // =============================================================================
 // RUTAS PRIVADAS
 // =============================================================================
-app.use('/api/v1', routes)
+// Notificaciones routes (authenticated)
+app.use('/api/v1/notificaciones', require('./routes/notificaciones.routes'))
+
+// Analytics routes (authenticated, cached)
+app.use('/api/v1/analytics', require('./routes/analytics.routes'))
+
+// Search routes (authenticated)
+app.use('/api/v1/search', require('./routes/search.routes'))
+
+// Mount v1 routes
+app.use('/api/v1', v1Routes)
+
+// Mount v2 routes (future)
+app.use('/api/v2', v2Routes)
+
+// Legacy routes (backward compatibility) - default to v1
+// Note: auth and health are already handled above before authentication
+app.use('/api/notificaciones', require('./routes/notificaciones.routes'))
+app.use('/api/analytics', require('./routes/analytics.routes'))
+app.use('/api/search', require('./routes/search.routes'))
+app.use('/api', v1Routes)
 
 // =============================================================================
 // MANEJO GLOBAL DE ERRORES
@@ -95,7 +157,8 @@ app.use((err, req, res, next) => {
   }
 
   // Log interno (nunca exponer al cliente)
-  console.error('[ERROR]', err)
+  const logger = require('./utils/logger')
+  logger.error('[ERROR]', err)
 
   res.status(err.statusCode || 500).json({
     status: 'error',

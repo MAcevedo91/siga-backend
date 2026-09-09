@@ -1,5 +1,7 @@
 const { supabase } = require('../utils/db')
 
+const UMBRAL_RIESGO_COMPORTAMIENTO = 6
+
 /**
  * Resumen general del tenant:
  * total incidentes, total graves+gravísimos, protocolos activos, estudiantes con incidentes
@@ -126,9 +128,96 @@ const getTendenciaMensual = async (tenantId) => {
   return Object.entries(conteo).map(([mes, total]) => ({ mes, total }))
 }
 
+/**
+ * Retorna estudiantes cuyo comportamiento en la ventana configurada supera el umbral de riesgo
+ */
+const getEstudiantesEnRiesgo = async (tenantId) => {
+  // 1. Obtener parámetros configurados para el tenant (con fallback)
+  const { data: config } = await supabase
+    .from('configuracion_tenant')
+    .select('umbral_riesgo, ventana_dias_riesgo')
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  const umbralRiesgo = config?.umbral_riesgo ?? UMBRAL_RIESGO_COMPORTAMIENTO
+  const ventanaDias = config?.ventana_dias_riesgo ?? 30
+
+  // Fecha calculada según la ventana en días configurada
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - ventanaDias)
+  const dateStr = cutoffDate.toISOString().split('T')[0]
+
+  // Consultar incidentes de la ventana y los estudiantes asociados
+  // Usamos inner join en estudiantes para asegurar que pertenezcan al tenant
+  const { data, error } = await supabase
+    .from('incidente_estudiantes')
+    .select(`
+      estudiante_id,
+      estudiantes!inner (
+        id, nombre, apellido, rut,
+        cursos ( nombre )
+      ),
+      incidentes!inner (
+        id, fecha, gravedad
+      )
+    `)
+    .eq('estudiantes.tenant_id', tenantId)
+    .gte('incidentes.fecha', dateStr)
+
+  if (error) throw error
+
+  // Agrupar y calcular score en JS
+  const estudiantesMap = new Map()
+
+  for (const row of data || []) {
+    const est = row.estudiantes
+    const incidente = row.incidentes
+
+    if (!estudiantesMap.has(est.id)) {
+      estudiantesMap.set(est.id, {
+        id: est.id,
+        nombre: est.nombre,
+        apellido: est.apellido,
+        rut: est.rut,
+        curso: est.cursos?.nombre || 'Sin curso',
+        score_riesgo: 0,
+        total_incidentes_30d: 0,
+        total_graves: 0
+      })
+    }
+
+    const current = estudiantesMap.get(est.id)
+    current.total_incidentes_30d += 1
+
+    let puntosPorGravedad = 0
+    if (incidente.gravedad === 'Grave') {
+      current.total_graves += 1
+      puntosPorGravedad = 3
+    } else if (incidente.gravedad === 'Gravísima') {
+      puntosPorGravedad = 5
+    }
+
+    // Fórmula: (1 por estar en ventana * 2) + (puntos_gravedad)
+    current.score_riesgo += (1 * 2) + puntosPorGravedad
+  }
+
+  // Filtrar los que superan el umbral dinámico y ordenar
+  const enRiesgo = Array.from(estudiantesMap.values())
+    .filter(e => e.score_riesgo >= umbralRiesgo)
+    .sort((a, b) => b.score_riesgo - a.score_riesgo)
+
+  return enRiesgo
+}
+
+
+const { getAntecedentesEscalada } = require('./alertasService')
+
 module.exports = {
   getResumen,
   getIncidentesPorCurso,
   getIncidentesPorGravedad,
   getTendenciaMensual,
+  getEstudiantesEnRiesgo,
+  getAntecedentesEscalada,
 }
+

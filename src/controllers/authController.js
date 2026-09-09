@@ -5,8 +5,16 @@ const authService = require('../services/authService')
  */
 const loginHandler = async (req, res, next) => {
   try {
-    const { email, password } = req.body
+    const { email, password } = req.body || {}
+
+    if (!email || !password) {
+      const err = new Error('Email y contraseña son requeridos')
+      err.statusCode = 400
+      throw err
+    }
+
     const result = await authService.login(email, password)
+
 
     res.status(200).json({
       status: 'success',

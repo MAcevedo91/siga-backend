@@ -1,5 +1,66 @@
+const { z } = require('zod')
 const { supabase } = require('../utils/db')
 const { validarRut, formatearRut } = require('../utils/rutValidator')
+const { invalidateEstudiantes } = require('../utils/cacheInvalidator')
+
+// =============================================================================
+// ESQUEMAS DE VALIDACIÓN ZOD
+// =============================================================================
+
+const apoderadoSchema = z.object({
+  nombre: z.string().min(1, 'El nombre del apoderado es requerido').max(100).optional(),
+  apellido: z.string().min(1, 'El apellido del apoderado es requerido').max(100).optional(),
+  rut: z.string().max(12).optional().nullable(),
+  email: z.string().email('Email inválido').optional().nullable(),
+  telefono: z.string().max(20).optional().nullable(),
+  direccion: z.string().max(255, 'La dirección no puede exceder 255 caracteres').optional().nullable(),
+}).optional().nullable()
+
+const estudianteSchema = z.object({
+  rut: z.string().min(1, 'El RUT es requerido'),
+  nombre: z.string().min(1, 'El nombre es requerido').max(100, 'El nombre no puede exceder 100 caracteres'),
+  apellido: z.string().min(1, 'El apellido es requerido').max(100, 'El apellido no puede exceder 100 caracteres'),
+  curso_id: z.union([z.string(), z.number()]).optional().nullable(),
+  fecha_nacimiento: z.string().optional().nullable(),
+  es_pie: z.preprocess(
+    val => (typeof val === 'string' ? ['true', '1', 'si', 'sí', 's', 'yes', 'y'].includes(val.trim().toLowerCase()) : val),
+    z.boolean().optional().default(false)
+  ),
+  direccion: z.preprocess(
+    val => (typeof val === 'string' ? val.trim() || null : val),
+    z.string().max(255, 'La dirección no puede exceder 255 caracteres').optional().nullable()
+  ),
+  apoderado: apoderadoSchema,
+})
+
+const actualizarEstudianteSchema = z.object({
+  nombre: z.string().min(1, 'El nombre no puede estar vacío').max(100).optional(),
+  apellido: z.string().min(1, 'El apellido no puede estar vacío').max(100).optional(),
+  curso_id: z.union([z.string(), z.number()]).optional().nullable(),
+  fecha_nacimiento: z.string().optional().nullable(),
+  activo: z.boolean().optional(),
+  es_pie: z.preprocess(
+    val => (typeof val === 'string' ? ['true', '1', 'si', 'sí', 's', 'yes', 'y'].includes(val.trim().toLowerCase()) : val),
+    z.boolean().optional()
+  ),
+  direccion: z.preprocess(
+    val => (typeof val === 'string' ? val.trim() || null : val),
+    z.string().max(255, 'La dirección no puede exceder 255 caracteres').optional().nullable()
+  ),
+  direccion_apoderado: z.preprocess(
+    val => (typeof val === 'string' ? val.trim() || null : val),
+    z.string().max(255, 'La dirección del apoderado no puede exceder 255 caracteres').optional().nullable()
+  ),
+  apoderado: apoderadoSchema,
+})
+
+const formatearErrorZod = (error) => {
+  const issues = error.issues || error.errors || []
+  if (issues.length > 0) {
+    return issues.map(i => i.message).join('. ')
+  }
+  return 'Datos inválidos en el body del request'
+}
 
 // =============================================================================
 // HELPERS
@@ -11,23 +72,43 @@ const { validarRut, formatearRut } = require('../utils/rutValidator')
 const buscarOCrearCurso = async (nombreCurso, tenantId) => {
   if (!nombreCurso) return null
 
+  const trimmed = nombreCurso.trim()
+
   // Buscar primero
   const { data: existente } = await supabase
     .from('cursos')
     .select('id')
     .eq('tenant_id', tenantId)
-    .ilike('nombre', nombreCurso.trim())
+    .ilike('nombre', trimmed)
     .single()
 
   if (existente) return existente.id
+
+  // Descomponer nivel y letra si el nombre termina con una letra (ej. "1° Básico A")
+  const match = trimmed.match(/^(.*?)\s+([A-Za-z0-9]{1,2})$/)
+  const nivel = match ? match[1].trim() : trimmed
+  const letra = match ? match[2].toUpperCase() : 'A'
+
+  // Obtener período académico activo para el tenant
+  const { data: periodos } = await supabase
+    .from('periodos_academicos')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('activo', true)
+    .order('anio', { ascending: false })
+    .limit(1)
+
+  const periodoId = (periodos && periodos.length > 0) ? periodos[0].id : null
 
   // Crear si no existe
   const { data: nuevo, error } = await supabase
     .from('cursos')
     .insert({
       tenant_id:      tenantId,
-      nombre:         nombreCurso.trim(),
-      nivel:          'Sin clasificar',
+      nombre:         trimmed,
+      nivel:          nivel,
+      letra:          letra,
+      periodo_id:     periodoId,
       anio_academico: new Date().getFullYear(),
     })
     .select('id')
@@ -55,7 +136,7 @@ const listarEstudiantes = async (tenantId, filtros = {}) => {
 
   let query = supabase
     .from('estudiantes')
-    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, activo')
+    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, es_pie, direccion, activo, cursos ( id, nombre )')
     .eq('tenant_id', tenantId)
     .order('apellido', { ascending: true })
 
@@ -74,7 +155,12 @@ const listarEstudiantes = async (tenantId, filtros = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+  return (data || []).map((e) => {
+    if (e.cursos !== undefined) {
+      return { ...e, curso: e.cursos }
+    }
+    return e
+  })
 }
 
 /**
@@ -87,7 +173,7 @@ const obtenerPerfil = async (id, tenantId) => {
     .from('estudiantes')
     .select(`
       id, tenant_id, rut, nombre, apellido,
-      fecha_nacimiento, activo,
+      fecha_nacimiento, activo, es_pie, direccion,
       cursos ( id, nombre, nivel, anio_academico )
     `)
     .eq('id', id)
@@ -103,7 +189,7 @@ const obtenerPerfil = async (id, tenantId) => {
   // Apoderados
   const { data: apoderados } = await supabase
     .from('apoderados')
-    .select('id, nombre, apellido, rut, email, telefono, es_titular')
+    .select('id, nombre, apellido, rut, email, telefono, es_titular, direccion')
     .eq('estudiante_id', id)
     .eq('tenant_id', tenantId)
 
@@ -129,9 +215,14 @@ const obtenerPerfil = async (id, tenantId) => {
     observacion:   item.observacion,
   }))
 
+  // Identificar apoderado titular (o el primero disponible) para compatibilidad
+  const listaApoderados = apoderados || []
+  const apoderadoTitular = listaApoderados.find(a => a.es_titular) || listaApoderados[0] || null
+
   return {
     ...estudiante,
-    apoderados: apoderados || [],
+    apoderado: apoderadoTitular,
+    apoderados: listaApoderados,
     incidentes,
   }
 }
@@ -140,8 +231,17 @@ const obtenerPerfil = async (id, tenantId) => {
  * Crea un estudiante individual.
  */
 const crearEstudiante = async (tenantId, datos) => {
-  const { rut, nombre, apellido, curso_id, fecha_nacimiento } = datos
+  // 1. Validar esquema con Zod
+  const resultado = estudianteSchema.safeParse(datos)
+  if (!resultado.success) {
+    const err = new Error(formatearErrorZod(resultado.error))
+    err.statusCode = 400
+    throw err
+  }
 
+  const { rut, nombre, apellido, curso_id, fecha_nacimiento, es_pie, direccion, apoderado } = resultado.data
+
+  // 2. Validar formato RUT
   if (!validarRut(rut)) {
     const err = new Error('RUT inválido')
     err.statusCode = 400
@@ -150,6 +250,7 @@ const crearEstudiante = async (tenantId, datos) => {
 
   const rutFormateado = formatearRut(rut)
 
+  // 3. Insertar estudiante
   const { data, error } = await supabase
     .from('estudiantes')
     .insert({
@@ -159,6 +260,8 @@ const crearEstudiante = async (tenantId, datos) => {
       apellido:         apellido.trim(),
       curso_id:         curso_id || null,
       fecha_nacimiento: fecha_nacimiento || null,
+      es_pie:           es_pie ?? false,
+      direccion:        direccion || null,
       activo:           true,
     })
     .select()
@@ -173,6 +276,30 @@ const crearEstudiante = async (tenantId, datos) => {
     throw error
   }
 
+  // 4. Si se proporcionaron datos de apoderado, insertar en apoderados
+  if (apoderado && (apoderado.nombre || apoderado.direccion || apoderado.email || apoderado.telefono)) {
+    try {
+      await supabase
+        .from('apoderados')
+        .insert({
+          tenant_id:     tenantId,
+          estudiante_id: data.id,
+          nombre:        apoderado.nombre ? apoderado.nombre.trim() : 'Apoderado Titular',
+          apellido:      apoderado.apellido ? apoderado.apellido.trim() : data.apellido,
+          rut:           apoderado.rut ? formatearRut(apoderado.rut) : null,
+          email:         apoderado.email || null,
+          telefono:      apoderado.telefono || null,
+          direccion:     apoderado.direccion || null,
+          es_titular:    true,
+        })
+    } catch (errApod) {
+      console.error('[CREAR_ESTUDIANTE] Error al insertar apoderado:', errApod.message)
+    }
+  }
+
+  // Invalidar cache después de crear
+  await invalidateEstudiantes(tenantId)
+
   return data
 }
 
@@ -180,13 +307,34 @@ const crearEstudiante = async (tenantId, datos) => {
  * Actualiza datos de un estudiante.
  */
 const actualizarEstudiante = async (id, tenantId, datos) => {
-  const { nombre, apellido, curso_id, fecha_nacimiento } = datos
+  // 1. Validar esquema con Zod
+  const resultado = actualizarEstudianteSchema.safeParse(datos)
+  if (!resultado.success) {
+    const err = new Error(formatearErrorZod(resultado.error))
+    err.statusCode = 400
+    throw err
+  }
+
+  const {
+    nombre,
+    apellido,
+    curso_id,
+    fecha_nacimiento,
+    activo,
+    es_pie,
+    direccion,
+    direccion_apoderado,
+    apoderado
+  } = resultado.data
 
   const update = {}
-  if (nombre)           update.nombre           = nombre.trim()
-  if (apellido)         update.apellido         = apellido.trim()
-  if (curso_id)         update.curso_id         = curso_id
-  if (fecha_nacimiento) update.fecha_nacimiento = fecha_nacimiento
+  if (nombre !== undefined)           update.nombre           = nombre.trim()
+  if (apellido !== undefined)         update.apellido         = apellido.trim()
+  if (curso_id !== undefined)         update.curso_id         = curso_id
+  if (fecha_nacimiento !== undefined) update.fecha_nacimiento = fecha_nacimiento
+  if (activo !== undefined)           update.activo           = activo
+  if (es_pie !== undefined)           update.es_pie           = es_pie
+  if (direccion !== undefined)        update.direccion        = direccion
 
   const { data, error } = await supabase
     .from('estudiantes')
@@ -202,12 +350,111 @@ const actualizarEstudiante = async (id, tenantId, datos) => {
     throw err
   }
 
+  // 2. Si se proporciona dirección o datos para el apoderado, actualizarlo
+  const dirApoderado = direccion_apoderado || apoderado?.direccion
+  if (dirApoderado !== undefined || (apoderado && Object.keys(apoderado).length > 0)) {
+    try {
+      const { data: apoderados } = await supabase
+        .from('apoderados')
+        .select('id')
+        .eq('estudiante_id', id)
+        .eq('tenant_id', tenantId)
+        .limit(1)
+
+      if (apoderados && apoderados.length > 0) {
+        const updateApod = {}
+        if (dirApoderado !== undefined) updateApod.direccion = dirApoderado
+        if (apoderado?.telefono !== undefined) updateApod.telefono = apoderado.telefono
+        if (apoderado?.email !== undefined) updateApod.email = apoderado.email
+        if (apoderado?.nombre !== undefined) updateApod.nombre = apoderado.nombre.trim()
+        if (apoderado?.apellido !== undefined) updateApod.apellido = apoderado.apellido.trim()
+        if (Object.keys(updateApod).length > 0) {
+          await supabase.from('apoderados').update(updateApod).eq('id', apoderados[0].id)
+        }
+      } else if (dirApoderado || apoderado?.nombre) {
+        await supabase.from('apoderados').insert({
+          tenant_id:     tenantId,
+          estudiante_id: id,
+          nombre:        apoderado?.nombre ? apoderado.nombre.trim() : 'Apoderado Titular',
+          apellido:      apoderado?.apellido ? apoderado.apellido.trim() : data.apellido,
+          rut:           apoderado?.rut ? formatearRut(apoderado.rut) : null,
+          email:         apoderado?.email || null,
+          telefono:      apoderado?.telefono || null,
+          direccion:     dirApoderado || null,
+          es_titular:    true,
+        })
+      }
+    } catch (errApod) {
+      console.error('[ACTUALIZAR_ESTUDIANTE] Error al actualizar apoderado:', errApod.message)
+    }
+  }
+
+  // Invalidar cache después de actualizar
+  await invalidateEstudiantes(tenantId)
+
   return data
 }
 
 // =============================================================================
 // IMPORTACIÓN MASIVA
 // =============================================================================
+
+// Definición de variantes de cabeceras toleradas en CSV / Excel
+const ALIASES = {
+  rut: ['rut', 'RUT', 'Rut'],
+  nombre: ['nombre', 'Nombre', 'NOMBRE', 'nombres', 'Nombres'],
+  apellido: ['apellido', 'Apellido', 'APELLIDO', 'apellidos', 'Apellidos'],
+  curso: ['curso', 'Curso', 'CURSO'],
+  pie: ['pie', 'PIE', 'Pie', 'es_pie', 'ES_PIE', 'Es_Pie', 'esPie', 'EsPie'],
+  direccion: [
+    'direccion', 'Direccion', 'DIRECCION',
+    'domicilio', 'Domicilio', 'DOMICILIO',
+    'direccion_estudiante', 'domicilio_estudiante',
+    'direccion_alumno', 'domicilio_alumno'
+  ],
+  direccion_apoderado: [
+    'direccion_apoderado', 'Direccion_Apoderado', 'DIRECCION_APODERADO',
+    'domicilio_apoderado', 'Domicilio_Apoderado', 'DOMICILIO_APODERADO',
+    'apoderado_direccion', 'apoderado_domicilio',
+    'direccion_tutor', 'domicilio_tutor'
+  ],
+  apoderado_nombre: [
+    'apoderado_nombre', 'nombre_apoderado',
+    'Apoderado_Nombre', 'Nombre_Apoderado'
+  ],
+  apoderado_apellido: [
+    'apoderado_apellido', 'apellido_apoderado',
+    'Apoderado_Apellido', 'Apellido_Apoderado'
+  ],
+  apoderado_rut: [
+    'apoderado_rut', 'rut_apoderado',
+    'Apoderado_Rut', 'Rut_Apoderado'
+  ],
+  apoderado_email: [
+    'apoderado_email', 'email_apoderado',
+    'Apoderado_Email', 'Email_Apoderado'
+  ],
+  apoderado_telefono: [
+    'apoderado_telefono', 'telefono_apoderado',
+    'Apoderado_Telefono', 'Telefono_Apoderado'
+  ],
+}
+
+const obtenerValorFila = (fila, listaAliases) => {
+  for (const alias of listaAliases) {
+    if (fila[alias] !== undefined && fila[alias] !== null) {
+      const val = String(fila[alias]).trim()
+      if (val !== '') return val
+    }
+  }
+  return ''
+}
+
+const parsearBooleanoPie = (valor) => {
+  if (!valor) return false
+  const limpio = String(valor).trim().toLowerCase()
+  return ['si', 'sí', 'true', '1', 's', 'yes', 'y'].includes(limpio)
+}
 
 /**
  * Procesa un array de filas CSV/Excel e importa los estudiantes.
@@ -222,16 +469,18 @@ const importarEstudiantes = async (filas, tenantId) => {
     const fila = filas[i]
     const numFila = i + 2 // +2 porque la fila 1 es el header
 
-    const rut      = fila.rut      || fila.RUT      || fila.Rut      || ''
-    const nombre   = fila.nombre   || fila.Nombre   || fila.NOMBRE   || ''
-    const apellido = fila.apellido || fila.Apellido || fila.APELLIDO || ''
-    const curso    = fila.curso    || fila.Curso    || fila.CURSO    || ''
-
-    // Datos del apoderado (opcionales)
-    const apoderadoNombre   = fila.apoderado_nombre   || fila.apoderado_Nombre   || ''
-    const apoderadoApellido = fila.apoderado_apellido || fila.apoderado_Apellido || ''
-    const apoderadoTelefono = fila.apoderado_telefono || fila.apoderado_Telefono || ''
-    const apoderadoEmail    = fila.apoderado_email    || fila.apoderado_Email    || ''
+    const rut          = obtenerValorFila(fila, ALIASES.rut)
+    const nombre       = obtenerValorFila(fila, ALIASES.nombre)
+    const apellido     = obtenerValorFila(fila, ALIASES.apellido)
+    const curso        = obtenerValorFila(fila, ALIASES.curso)
+    const pieRaw       = obtenerValorFila(fila, ALIASES.pie)
+    const dirEstRaw    = obtenerValorFila(fila, ALIASES.direccion)
+    const dirApodRaw   = obtenerValorFila(fila, ALIASES.direccion_apoderado)
+    const apodNombre   = obtenerValorFila(fila, ALIASES.apoderado_nombre)
+    const apodApellido = obtenerValorFila(fila, ALIASES.apoderado_apellido)
+    const apodRut      = obtenerValorFila(fila, ALIASES.apoderado_rut)
+    const apodEmail    = obtenerValorFila(fila, ALIASES.apoderado_email)
+    const apodTelefono = obtenerValorFila(fila, ALIASES.apoderado_telefono)
 
     // Validar campos obligatorios
     if (!rut) {
@@ -251,10 +500,13 @@ const importarEstudiantes = async (filas, tenantId) => {
     }
 
     const rutFormateado = formatearRut(rut)
+    const esPie = parsearBooleanoPie(pieRaw)
+    const direccionEstudiante = dirEstRaw || null
 
     try {
       // Buscar o crear curso
       const cursoId = curso ? await buscarOCrearCurso(curso, tenantId) : null
+      let estudianteId = null
 
       // Verificar si el RUT ya existe (upsert)
       const { data: existente } = await supabase
@@ -264,66 +516,102 @@ const importarEstudiantes = async (filas, tenantId) => {
         .eq('tenant_id', tenantId)
         .single()
 
-      let estudianteId
-
       if (existente) {
-        // Actualizar estudiante
+        estudianteId = existente.id
+        // Actualizar
+        const updatePayload = {
+          nombre:   nombre.trim(),
+          apellido: apellido.trim(),
+          curso_id: cursoId,
+        }
+        if (pieRaw !== '') {
+          updatePayload.es_pie = esPie
+        }
+        if (dirEstRaw !== '') {
+          updatePayload.direccion = direccionEstudiante
+        }
+
         await supabase
           .from('estudiantes')
-          .update({
-            nombre:   nombre.trim(),
-            apellido: apellido.trim(),
-            curso_id: cursoId,
-          })
+          .update(updatePayload)
           .eq('id', existente.id)
           .eq('tenant_id', tenantId)
 
-        estudianteId = existente.id
         actualizados++
       } else {
-        // Insertar estudiante
-        const { data: nuevo } = await supabase
+        // Insertar
+        const { data: nuevo, error: insertError } = await supabase
           .from('estudiantes')
           .insert({
-            tenant_id: tenantId,
-            rut:       rutFormateado,
-            nombre:    nombre.trim(),
-            apellido:  apellido.trim(),
-            curso_id:  cursoId,
-            activo:    true,
+            tenant_id:        tenantId,
+            rut:              rutFormateado,
+            nombre:           nombre.trim(),
+            apellido:         apellido.trim(),
+            curso_id:         cursoId,
+            es_pie:           esPie,
+            direccion:        direccionEstudiante,
+            activo:           true,
           })
           .select('id')
           .single()
 
+        if (insertError) throw insertError
         estudianteId = nuevo?.id
         importados++
       }
 
-      // Crear o actualizar apoderado si vienen datos
-      if (estudianteId && apoderadoNombre && apoderadoApellido) {
-        // Verificar si ya tiene apoderado titular
-        const { data: apoderadoExistente } = await supabase
-          .from('apoderados')
-          .select('id')
-          .eq('estudiante_id', estudianteId)
-          .eq('es_titular', true)
-          .single()
+      // Procesar datos de apoderado si vienen en la fila
+      if (estudianteId && (dirApodRaw || apodNombre || apodEmail || apodTelefono)) {
+        try {
+          const { data: apoderadosExistentes } = await supabase
+            .from('apoderados')
+            .select('id')
+            .eq('estudiante_id', estudianteId)
+            .eq('tenant_id', tenantId)
+            .limit(1)
 
-        if (!apoderadoExistente) {
-          await supabase.from('apoderados').insert({
-            tenant_id:     tenantId,
-            estudiante_id: estudianteId,
-            nombre:        apoderadoNombre.trim(),
-            apellido:      apoderadoApellido.trim(),
-            telefono:      apoderadoTelefono || null,
-            email:         apoderadoEmail    || null,
-            es_titular:    true,
-          })
+          if (apoderadosExistentes && apoderadosExistentes.length > 0) {
+            const apodUpdate = {}
+            if (dirApodRaw)   apodUpdate.direccion = dirApodRaw
+            if (apodNombre)   apodUpdate.nombre    = apodNombre
+            if (apodApellido) apodUpdate.apellido  = apodApellido
+            if (apodRut && validarRut(apodRut)) apodUpdate.rut = formatearRut(apodRut)
+            if (apodEmail)    apodUpdate.email     = apodEmail
+            if (apodTelefono) apodUpdate.telefono  = apodTelefono
+
+            if (Object.keys(apodUpdate).length > 0) {
+              await supabase
+                .from('apoderados')
+                .update(apodUpdate)
+                .eq('id', apoderadosExistentes[0].id)
+            }
+          } else if (dirApodRaw || apodNombre) {
+            await supabase
+              .from('apoderados')
+              .insert({
+                tenant_id:     tenantId,
+                estudiante_id: estudianteId,
+                nombre:        apodNombre || 'Apoderado Titular',
+                apellido:      apodApellido || apellido.trim(),
+                rut:           apodRut && validarRut(apodRut) ? formatearRut(apodRut) : null,
+                email:         apodEmail || null,
+                telefono:      apodTelefono || null,
+                direccion:     dirApodRaw || null,
+                es_titular:    true,
+              })
+          }
+        } catch (apodErr) {
+          console.error(`[IMPORTAR_ESTUDIANTES] Error al procesar apoderado en fila ${numFila}:`, apodErr.message)
         }
       }
     } catch (err) {
       errores.push({ fila: numFila, rut, motivo: err.message || 'Error al procesar fila' })
     }
+  }
+
+  // Invalidar cache después de importación masiva
+  if (importados > 0 || actualizados > 0) {
+    await invalidateEstudiantes(tenantId)
   }
 
   return { importados, actualizados, errores }

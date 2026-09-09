@@ -87,6 +87,15 @@ const cambiarEstadoHandler = async (req, res, next) => {
       data: protocolo,
     })
   } catch (err) {
+    if (err.pasos_pendientes) {
+      return res.status(400).json({
+        status: 'error',
+        error: err.message,
+        message: err.message,
+        pasos_pendientes: err.pasos_pendientes,
+        statusCode: 400,
+      })
+    }
     next(err)
   }
 }
@@ -107,10 +116,71 @@ const tiposProtocoloHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/protocolos/acciones-pendientes
+ */
+const accionesPendientesHandler = async (req, res, next) => {
+  try {
+    const acciones = await protocolosService.calcularAccionesPendientes(req.user.tenant_id)
+    res.status(200).json({
+      status: 'success',
+      message: 'Acciones pendientes calculadas exitosamente',
+      data: acciones,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/protocolos/:id/pasos
+ */
+const listarPasosHandler = async (req, res, next) => {
+  try {
+    const pasos = await protocolosService.listarPasosProtocolo(
+      req.params.id,
+      req.user.tenant_id
+    )
+    res.status(200).json({
+      status: 'success',
+      message: `${pasos.length} paso(s) encontrado(s)`,
+      data: pasos,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * PATCH /api/v1/protocolos/:id/pasos/:pasoId
+ */
+const actualizarPasoHandler = async (req, res, next) => {
+  try {
+    const pasoActualizado = await protocolosService.actualizarPasoProtocolo(
+      req.params.id,
+      req.params.pasoId,
+      req.user.tenant_id,
+      req.user.user_id || req.user.id,
+      req.body,
+      req.ip
+    )
+    res.status(200).json({
+      status: 'success',
+      message: 'Paso normativo actualizado exitosamente',
+      data: pasoActualizado,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   obtenerHandler,
   crearHandler,
   cambiarEstadoHandler,
   tiposProtocoloHandler,
+  accionesPendientesHandler,
+  listarPasosHandler,
+  actualizarPasoHandler,
 }

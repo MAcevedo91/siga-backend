@@ -75,3 +75,38 @@ Request → authenticateToken → setTenantContext → requireRole (por ruta) �
 | GET | `/api/v1/health` | Health check del servidor |
 | POST | `/api/v1/auth/login` | Login con email y contraseña |
 | GET | `/api/v1/auth/me` | Datos del usuario autenticado |
+
+## Módulo de Asistencia
+
+Sistema de registro híbrido de asistencia escolar (día completo + bloques opcionales).
+
+### Características
+
+- ✅ Registro rápido por curso (bulk insert)
+- ✅ Modelo híbrido: día completo o por bloque (1-8)
+- ✅ Analytics automático: % asistencia, alertas ausentismo >15%
+- ✅ Bull job diario: email a Dirección con estudiantes en riesgo
+- ✅ Cache Redis para dashboard (TTL 1h asistencia, 30min alertas)
+- ✅ RBAC: Inspector/Docente registro, Directivo/Admin full access
+- ✅ Auditoría completa de registros
+
+### Migraciones
+
+```bash
+psql $DATABASE_URL -f migrations/2026-07-02-add-asistencia-tables.sql
+```
+
+### API Docs
+
+Ver [docs/api/asistencia.md](docs/api/asistencia.md)
+
+### Tests
+
+```bash
+# Unit tests
+npm test -- asistenciaService.test.js
+
+# E2E tests
+cd ../siga-frontend
+npx playwright test asistencia.spec.js
+```
