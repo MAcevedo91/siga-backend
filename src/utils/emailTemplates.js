@@ -26,8 +26,14 @@ function renderProtocoloVencidoTemplate(data) {
   return renderTemplate('protocolo-vencido', data)
 }
 
+
+function renderInformeOficialApoderadoTemplate(data) {
+  return renderTemplate('informe-oficial-apoderado', data)
+}
+
 module.exports = {
   renderIncidenteGraveTemplate,
   renderProtocoloAbiertoTemplate,
-  renderProtocoloVencidoTemplate
+  renderProtocoloVencidoTemplate,
+  renderInformeOficialApoderadoTemplate,
 }

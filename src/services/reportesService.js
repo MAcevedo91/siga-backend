@@ -4,6 +4,9 @@ const logger = require('../utils/logger')
 const { registrarAuditoria } = require('./auditoriaService')
 const dlpSanitizer = require('./dlpSanitizer')
 const geminiService = require('./geminiService')
+const emailService = require('./emailService')
+const pdfService = require('./pdfService')
+
 
 // =============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (CIRCULAR N° 482 - SUPERINTENDENCIA DE EDUCACIÓN)
@@ -297,6 +300,94 @@ const aprobarReporte = async ({
     })
   } catch (auditErr) {
     logger.warn('Fallo no bloqueante al auditar aprobación de reporte:', auditErr.message)
+  }
+
+  // Despacho automatizado no bloqueante al apoderado titular con PDF adjunto (HU 6.4 - Tarea 6.4.1)
+  try {
+    const { data: apoderado } = await supabase
+      .from('apoderados')
+      .select('id, nombre, apellido, email, telefono')
+      .eq('estudiante_id', actual.estudiante_id)
+      .eq('es_titular', true)
+      .maybeSingle()
+
+    if (apoderado && apoderado.email) {
+      const { data: tenant } = await supabase
+        .from('tenants')
+        .select('id, nombre, rbd, direccion')
+        .eq('id', tenantId)
+        .maybeSingle()
+
+      const { data: estudianteData } = await supabase
+        .from('estudiantes')
+        .select(`
+          id, rut, nombre, apellido, es_pie, direccion,
+          cursos:curso_id ( id, nombre, nivel, letra )
+        `)
+        .eq('id', actual.estudiante_id)
+        .maybeSingle()
+
+      const estudianteCompleto = {
+        ...(actual.estudiantes || {}),
+        ...(estudianteData || {}),
+      }
+
+      const incidenteCompleto = actual.incidentes || { id: actual.incidente_id }
+
+      const pdfBuffer = await pdfService.generarInformeOficialIncidentePDF({
+        reporte: data,
+        incidente: incidenteCompleto,
+        estudiante: estudianteCompleto,
+        tenant: tenant || {},
+        apoderado,
+      })
+
+      const anio = new Date(ahora).getFullYear()
+      const correlativo = String(data.id || '').replace(/-/g, '').slice(0, 6).toUpperCase()
+      const folio = `INF-${anio}-${correlativo}`
+
+      const fechaIncidenteStr = incidenteCompleto.fecha
+        ? new Date(incidenteCompleto.fecha).toLocaleDateString('es-CL')
+        : 'Fecha no registrada'
+
+      const fechaAprobacionStr = new Date(ahora).toLocaleDateString('es-CL', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+
+      const filename = `Informe_Oficial_${estudianteCompleto.apellido || 'Estudiante'}.pdf`
+
+      await emailService.enviarEmailInformeOficialApoderado({
+        apoderadoEmail: apoderado.email,
+        apoderadoNombre: `${apoderado.nombre} ${apoderado.apellido}`,
+        estudianteNombre: `${estudianteCompleto.nombre} ${estudianteCompleto.apellido}`,
+        colegioNombre: tenant?.nombre || 'Escuela Coeducacional N° 1 El Salvador',
+        folio,
+        fechaIncidente: fechaIncidenteStr,
+        fechaAprobacion: fechaAprobacionStr,
+        pdfBuffer,
+        filename,
+      })
+
+      const fechaEnvio = new Date().toISOString()
+      await supabase
+        .from('reportes_incidentes')
+        .update({
+          email_apoderado_enviado: true,
+          fecha_envio_email: fechaEnvio,
+        })
+        .eq('id', data.id)
+
+      data.email_apoderado_enviado = true
+      data.fecha_envio_email = fechaEnvio
+
+      logger.info(`Informe oficial enviado por correo al apoderado titular (${apoderado.email}) para reporte ${data.id}`)
+    } else {
+      logger.info(`El estudiante ${actual.estudiante_id} no cuenta con apoderado titular con email. Notificación presencial requerida.`)
+    }
+  } catch (emailErr) {
+    logger.error('Error no bloqueante al despachar informe oficial por email al apoderado:', emailErr.message || emailErr)
   }
 
   return data
