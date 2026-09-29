@@ -96,13 +96,14 @@ const sanitizarContextoIncidente = (incidente, estudianteFocoId) => {
   involucrados.forEach((inv) => {
     if (inv.id !== estudianteFocoId) {
       contraparteCount++
-      const token = `[INVOLUCRADO_${contraparteCount}]`
+      const tokenClean = `INVOLUCRADO_${contraparteCount}`
+      const token = `[${tokenClean}]`
       mapaTokens.push({
         token,
         nombreCompleto: inv.nombreCompleto,
         nombre: inv.nombre,
         apellido: inv.apellido,
-        etiquetaRol: `[${token} - Rol: ${inv.rol}, Curso: ${inv.curso}]`,
+        etiquetaRol: `[${tokenClean} - Rol: ${inv.rol}, Curso: ${inv.curso}]`,
       })
       // Para el informe del apoderado foco, los otros menores se identifican de manera neutra
       mapaRestauracion.reemplazosInvolucrados[token] = 'otro estudiante involucrado'
@@ -113,21 +114,31 @@ const sanitizarContextoIncidente = (incidente, estudianteFocoId) => {
   let relatoSanitizado = censurarPatronesPII(incidente.relato || '')
   let medidasSanitizadas = censurarPatronesPII(incidente.medidas || '')
 
-  // Reemplazar nombres completos y apellidos (orden de mayor a menor longitud)
+  // Reemplazar nombres completos, nombres de pila y apellidos (incluso compuestos)
   const reemplazosTexto = []
+  const palabrasComunes = new Set(['de', 'del', 'la', 'las', 'los', 'san', 'el'])
+  const agregarBusqueda = (texto, token) => {
+    if (!texto || typeof texto !== 'string') return
+    const trimmed = texto.trim()
+    if (trimmed.length > 2 && !palabrasComunes.has(trimmed.toLowerCase())) {
+      reemplazosTexto.push({ busqueda: trimmed, token })
+    }
+  }
+
   mapaTokens.forEach((item) => {
-    if (item.nombreCompleto && item.nombreCompleto.length > 2) {
-      reemplazosTexto.push({ busqueda: item.nombreCompleto, token: item.token })
-    }
-    if (item.apellido && item.apellido.length > 2) {
-      reemplazosTexto.push({ busqueda: item.apellido, token: item.token })
-    }
-    if (item.nombre && item.nombre.length > 2) {
-      reemplazosTexto.push({ busqueda: item.nombre, token: item.token })
-    }
+    agregarBusqueda(item.nombreCompleto, item.token)
+    agregarBusqueda(item.apellido, item.token)
+    agregarBusqueda(item.nombre, item.token)
+
+    const primerNombre = (item.nombre || '').split(/\s+/)[0]
+    const primerApellido = (item.apellido || '').split(/\s+/)[0]
+
+    if (primerNombre) agregarBusqueda(primerNombre, item.token)
+    if (primerApellido) agregarBusqueda(primerApellido, item.token)
+    if (primerNombre && primerApellido) agregarBusqueda(`${primerNombre} ${primerApellido}`, item.token)
   })
 
-  // Ordenar de mayor a menor para evitar que reemplace nombres antes de nombres completos
+  // Ordenar de mayor a menor longitud para no reemplazar nombres parciales antes de nombres completos
   reemplazosTexto.sort((a, b) => b.busqueda.length - a.busqueda.length)
 
   reemplazosTexto.forEach(({ busqueda, token }) => {

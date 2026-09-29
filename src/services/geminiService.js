@@ -1,10 +1,10 @@
-const { GoogleGenAI } = require('@google/genai')
+const { GoogleGenAI, Type } = require('@google/genai')
 const logger = require('../utils/logger')
 const {
   sanitizarContextoIncidente,
   desanonimizarReporte,
 } = require('./dlpSanitizer')
-const { seccionesReporteSchema } = require('./reportesService')
+const { seccionesReporteSchema } = require('../schemas/reportesSchemas')
 
 // =============================================================================
 // SYSTEM INSTRUCTIONS: DIRECTRICES NORMATIVAS (CIRCULAR N° 482 SUPEREDUC)
@@ -25,28 +25,28 @@ Reglas mandatorias de redacción:
    - "plan_seguimiento": Acciones de acompañamiento posterior por parte del profesor jefe, equipo de convivencia o dupla psicosocial.
 5. PRESERVACIÓN DE TOKENS: Utiliza exactamente los tokens proporcionados como [ESTUDIANTE_FOCO] y [INVOLUCRADO_N] sin alterarlos ni agregarles apellidos ficticios.`
 
-// Schema JSON forzado para Google Gemini Flash
+// Schema JSON forzado para Google Gemini Flash (@google/genai)
 const JSON_SCHEMA_REPORTE = {
-  type: 'object',
+  type: Type.OBJECT,
   properties: {
     contexto: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Espacio físico, fecha y circunstancias donde ocurrió el hecho.',
     },
     hechos_objetivos: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Relato cronológico de hechos observables en tercera persona.',
     },
     medidas_adoptadas: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Medidas pedagógicas y de contención inmediata adoptadas.',
     },
     acuerdos_compromisos: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Compromisos y acuerdos formativos asumidos con el estudiante.',
     },
     plan_seguimiento: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Plan de acompañamiento pedagógico por parte de la escuela.',
     },
   },
@@ -93,7 +93,7 @@ const generarPropuestaReporteIA = async (incidente, estudianteFocoId) => {
     sanitizarContextoIncidente(incidente, estudianteFocoId)
 
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3-flash-preview'
 
   let reporteConTokens = null
 
@@ -102,10 +102,9 @@ const generarPropuestaReporteIA = async (incidente, estudianteFocoId) => {
     logger.warn('GEMINI_API_KEY no configurada. Utilizando fallback local normativo.')
     reporteConTokens = generarPlantillaFallback(incidente, estudianteFoco, promptSanitizado)
   } else {
-    try {
-      const ai = new GoogleGenAI({ apiKey })
+    const ai = new GoogleGenAI({ apiKey })
 
-      const promptContenido = `
+    const promptContenido = `
 Fecha del Incidente: ${promptSanitizado.fechaIncidente}
 Nivel de Gravedad: ${promptSanitizado.gravedad}
 Tipo de Abordaje: ${promptSanitizado.tipoAbordaje}
@@ -125,25 +124,44 @@ Medidas iniciales adoptadas:
 Instrucción: Genera el borrador del informe estructurado en formato JSON enfocado en [ESTUDIANTE_FOCO].
 `
 
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: promptContenido,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION_REPORTE,
-          responseMimeType: 'application/json',
-          responseSchema: JSON_SCHEMA_REPORTE,
-          temperature: 0.2, // Baja temperatura para apego factual y determinismo
-        },
-      })
+    const candidateModels = [
+      modelName,
+      'gemini-3-flash-preview',
+      'gemini-3.8-flash',
+    ].filter((m, i, arr) => arr.indexOf(m) === i)
 
-      const textoRespuesta = response.text
-      if (!textoRespuesta) {
-        throw new Error('Respuesta vacía devuelta por Google Gemini Flash')
+    let ultimoError = null
+    for (const m of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: m,
+          contents: promptContenido,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION_REPORTE,
+            responseMimeType: 'application/json',
+            responseJsonSchema: JSON_SCHEMA_REPORTE,
+            temperature: 0.2, // Baja temperatura para apego factual y determinismo
+          },
+        })
+
+        const textoRespuesta = response.text
+        if (textoRespuesta) {
+          reporteConTokens = JSON.parse(textoRespuesta)
+          ultimoError = null
+          break
+        }
+      } catch (err) {
+        ultimoError = err
+        logger.warn(`Modelo ${m} no disponible temporalmente (${err.status || err.message}). Evaluando alternativa...`)
       }
+    }
 
-      reporteConTokens = JSON.parse(textoRespuesta)
-    } catch (apiError) {
-      logger.error('Error al invocar Google Gemini Flash API:', apiError.message)
+    if (!reporteConTokens) {
+      const errMsg = ultimoError?.message || ultimoError?.toString() || 'Error desconocido'
+      logger.error(`Error al invocar Google Gemini Flash API: ${errMsg}`, { error: ultimoError?.stack || ultimoError })
+      console.error('\n⚠️  [DETALLE ERROR GEMINI API]:', errMsg)
+      if (ultimoError?.status) console.error('   Código de Estado HTTP:', ultimoError.status)
+      if (ultimoError?.errorDetails) console.error('   Detalles:', JSON.stringify(ultimoError.errorDetails))
       // Degradación grácil ante fallos de conectividad o cuota de API
       reporteConTokens = generarPlantillaFallback(incidente, estudianteFoco, promptSanitizado)
     }
@@ -169,4 +187,5 @@ module.exports = {
   JSON_SCHEMA_REPORTE,
   generarPlantillaFallback,
   generarPropuestaReporteIA,
+  generarPropuestaReporte: generarPropuestaReporteIA,
 }

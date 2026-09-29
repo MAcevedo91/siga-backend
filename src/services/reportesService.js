@@ -8,37 +8,11 @@ const emailService = require('./emailService')
 const pdfService = require('./pdfService')
 
 
-// =============================================================================
-// ESQUEMAS DE VALIDACIÓN ZOD (CIRCULAR N° 482 - SUPERINTENDENCIA DE EDUCACIÓN)
-// =============================================================================
-
-const seccionesReporteSchema = z.object({
-  contexto: z
-    .string({ required_error: 'El contexto es requerido' })
-    .min(10, 'El contexto debe tener al menos 10 caracteres'),
-  hechos_objetivos: z
-    .string({ required_error: 'El relato de hechos objetivos es requerido' })
-    .min(20, 'El relato objetivo debe tener al menos 20 caracteres'),
-  medidas_adoptadas: z
-    .string({ required_error: 'Las medidas adoptadas son requeridas' })
-    .min(10, 'Las medidas adoptadas deben tener al menos 10 caracteres'),
-  acuerdos_compromisos: z
-    .string({ required_error: 'Los acuerdos y compromisos son requeridos' })
-    .min(10, 'Los acuerdos y compromisos deben tener al menos 10 caracteres'),
-  plan_seguimiento: z
-    .string({ required_error: 'El plan de seguimiento es requerido' })
-    .min(10, 'El plan de seguimiento debe tener al menos 10 caracteres'),
-})
-
-const crearReporteSchema = z.object({
-  incidente_id: z.string().uuid('incidente_id debe ser un UUID válido'),
-  estudiante_id: z.string().uuid('estudiante_id debe ser un UUID válido'),
-  contenido_borrador: seccionesReporteSchema,
-})
-
-const editarReporteSchema = z.object({
-  contenido_editado: seccionesReporteSchema,
-})
+const {
+  seccionesReporteSchema,
+  crearReporteSchema,
+  editarReporteSchema,
+} = require('../schemas/reportesSchemas')
 
 // =============================================================================
 // MÉTODOS DE PERSISTENCIA Y GESTIÓN EN BASE DE DATOS
@@ -65,7 +39,7 @@ const crearBorradorReporte = async ({
   // Validar que el estudiante pertenezca al incidente
   const { data: participacion, error: errPart } = await supabase
     .from('incidente_estudiantes')
-    .select('id')
+    .select('estudiante_id')
     .eq('incidente_id', datosValidados.incidente_id)
     .eq('estudiante_id', datosValidados.estudiante_id)
     .maybeSingle()
@@ -472,25 +446,15 @@ const generarBorradoresParaIncidente = async ({
 
   const reportesGenerados = []
 
-  // Iterar por cada estudiante involucrado para producir su informe diferenciado
   for (const estudianteFoco of estudiantes) {
-    // 1. Sanitizar contexto escolar con DLP
-    const { contextoSanitizado, mapaTokens } = dlpSanitizer.sanitizarContextoIncidente(
+    // 1. Generar propuesta con Gemini Flash aplicando pipeline DLP y desanonimización
+    const propuestaIA = await geminiService.generarPropuestaReporteIA(
       incidente,
       estudianteFoco.id
     )
+    const seccionesDiferenciadas = propuestaIA.secciones || propuestaIA
 
-    // 2. Generar propuesta con Gemini Flash (o fallback estructurado)
-    const propuestaTokens = await geminiService.generarPropuestaReporte(contextoSanitizado)
-
-    // 3. Desanonimizar selectivamente para este estudiante
-    const seccionesDiferenciadas = dlpSanitizer.desanonimizarReporte(
-      propuestaTokens,
-      estudianteFoco,
-      estudiantes
-    )
-
-    // 4. Determinar versión incremental si ya existe un reporte previo
+    // 2. Determinar versión incremental si ya existe un reporte previo
     const { data: versionesPrevias } = await supabase
       .from('reportes_incidentes')
       .select('version')
