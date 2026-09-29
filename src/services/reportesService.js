@@ -2,6 +2,8 @@ const { z } = require('zod')
 const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
 const { registrarAuditoria } = require('./auditoriaService')
+const dlpSanitizer = require('./dlpSanitizer')
+const geminiService = require('./geminiService')
 
 // =============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (CIRCULAR N° 482 - SUPERINTENDENCIA DE EDUCACIÓN)
@@ -300,6 +302,133 @@ const aprobarReporte = async ({
   return data
 }
 
+/**
+ * Orquesta la generación asistida con IA de borradores diferenciados para todos
+ * los estudiantes involucrados en un incidente escolar.
+ *
+ * Flujo por cada estudiante:
+ * 1. Sanitización DLP (enmascara RUT, teléfonos, emails y nombres con tokens).
+ * 2. Inferencia estructurada vía Google Gemini Flash (o fallback algorítmico).
+ * 3. Desanonimización local diferenciada (restaura nombre real del foco, mantiene reserva de contrapartes).
+ * 4. Determinación de la versión adecuada (si ya existe un borrador, crea versión N+1).
+ * 5. Persistencia atómica en reportes_incidentes y registro de auditoría.
+ */
+const generarBorradoresParaIncidente = async ({
+  tenantId,
+  incidenteId,
+  usuarioId,
+  incidenteData,
+}) => {
+  let incidente = incidenteData
+
+  // Si no se proporcionó incidenteData, obtenerlo de la base de datos
+  if (!incidente) {
+    const { data: inc, error: errInc } = await supabase
+      .from('incidentes')
+      .select(`
+        id, fecha, gravedad, estado, relato, medidas, fecha_creacion,
+        tipos_abordaje ( id, nombre ),
+        usuarios ( id, nombre, apellido, rol )
+      `)
+      .eq('id', incidenteId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (errInc) {
+      logger.error('Error al consultar incidente para generar reporte:', errInc)
+      throw new Error('Error al consultar incidente')
+    }
+
+    if (!inc) {
+      const err = new Error('Incidente no encontrado')
+      err.status = 404
+      throw err
+    }
+
+    // Consultar estudiantes involucrados
+    const { data: involucrados, error: errEst } = await supabase
+      .from('incidente_estudiantes')
+      .select(`
+        es_victima, observacion,
+        estudiantes ( id, rut, nombre, apellido, es_pie )
+      `)
+      .eq('incidente_id', incidenteId)
+
+    if (errEst) {
+      logger.error('Error al consultar involucrados del incidente:', errEst)
+      throw new Error('Error al consultar estudiantes del incidente')
+    }
+
+    const flatEstudiantes = (involucrados || []).map(e => ({
+      ...e.estudiantes,
+      es_victima: e.es_victima,
+      observacion: e.observacion,
+    }))
+
+    incidente = {
+      ...inc,
+      tipo_abordaje: inc.tipos_abordaje?.nombre || 'General',
+      estudiantes: flatEstudiantes,
+    }
+  }
+
+  const estudiantes = incidente.estudiantes || []
+  if (estudiantes.length === 0) {
+    const err = new Error('El incidente no tiene estudiantes involucrados registrados')
+    err.status = 400
+    throw err
+  }
+
+  const reportesGenerados = []
+
+  // Iterar por cada estudiante involucrado para producir su informe diferenciado
+  for (const estudianteFoco of estudiantes) {
+    // 1. Sanitizar contexto escolar con DLP
+    const { contextoSanitizado, mapaTokens } = dlpSanitizer.sanitizarContextoIncidente(
+      incidente,
+      estudianteFoco.id
+    )
+
+    // 2. Generar propuesta con Gemini Flash (o fallback estructurado)
+    const propuestaTokens = await geminiService.generarPropuestaReporte(contextoSanitizado)
+
+    // 3. Desanonimizar selectivamente para este estudiante
+    const seccionesDiferenciadas = dlpSanitizer.desanonimizarReporte(
+      propuestaTokens,
+      estudianteFoco,
+      estudiantes
+    )
+
+    // 4. Determinar versión incremental si ya existe un reporte previo
+    const { data: versionesPrevias } = await supabase
+      .from('reportes_incidentes')
+      .select('version')
+      .eq('tenant_id', tenantId)
+      .eq('incidente_id', incidenteId)
+      .eq('estudiante_id', estudianteFoco.id)
+      .order('version', { ascending: false })
+      .limit(1)
+
+    const siguienteVersion = versionesPrevias && versionesPrevias.length > 0
+      ? (versionesPrevias[0].version + 1)
+      : 1
+
+    // 5. Persistir nuevo borrador
+    const nuevoReporte = await crearBorradorReporte({
+      tenantId,
+      incidenteId,
+      estudianteId: estudianteFoco.id,
+      contenidoBorrador: seccionesDiferenciadas,
+      creadoPor: usuarioId,
+      version: siguienteVersion,
+    })
+
+    reportesGenerados.push(nuevoReporte)
+  }
+
+  return reportesGenerados
+}
+
 module.exports = {
   seccionesReporteSchema,
   crearReporteSchema,
@@ -309,4 +438,5 @@ module.exports = {
   obtenerReportePorId,
   guardarEdicionBorrador,
   aprobarReporte,
+  generarBorradoresParaIncidente,
 }
