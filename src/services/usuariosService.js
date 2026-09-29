@@ -6,7 +6,7 @@ const ROLES_VALIDOS = ['Administrador', 'Directivo', 'Inspector', 'Docente', 'Eq
 /**
  * Campos seguros a retornar — nunca incluir password
  */
-const CAMPOS_PUBLICOS = 'id, tenant_id, email, nombre, apellido, rol, activo, fecha_creacion'
+const CAMPOS_PUBLICOS = 'id, tenant_id, email, nombre, apellido, rol, avatar_url, activo, fecha_creacion'
 
 /**
  * Lista todos los usuarios activos e inactivos del tenant.
@@ -186,10 +186,50 @@ const desactivarUsuario = async (id, tenantId) => {
   return data
 }
 
+/**
+ * Actualiza la URL del avatar de un usuario dentro de su tenant.
+ */
+const actualizarAvatar = async (id, tenantId, avatarUrl) => {
+  // Verificar existencia previa
+  await obtenerUsuario(id, tenantId)
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select(CAMPOS_PUBLICOS)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Remueve la URL del avatar del usuario y lo deja en null.
+ */
+const eliminarAvatar = async (id, tenantId) => {
+  const usuario = await obtenerUsuario(id, tenantId)
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({ avatar_url: null })
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select(CAMPOS_PUBLICOS)
+    .single()
+
+  if (error) throw error
+  return { usuario: data, urlAnterior: usuario.avatar_url }
+}
+
 module.exports = {
   listarUsuarios,
   obtenerUsuario,
   crearUsuario,
   actualizarUsuario,
   desactivarUsuario,
+  actualizarAvatar,
+  eliminarAvatar,
 }
+
