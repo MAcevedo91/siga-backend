@@ -1,3 +1,4 @@
+jest.mock('../../services/pdfService')
 const request = require('supertest')
 const express = require('express')
 const reportesController = require('../../controllers/reportesController')
@@ -275,4 +276,88 @@ describe('reportesController & Rutas Incidentes (Tarea 6.1.3)', () => {
       expect(reportesService.aprobarReporte).not.toHaveBeenCalled()
     })
   })
+
+  describe('GET /api/v1/incidentes/:id/reportes/:reporteId/pdf', () => {
+    const pdfService = require('../../services/pdfService')
+    const { supabase } = require('../../utils/db')
+
+    beforeEach(() => {
+      // Mock supabase selects para tenant, estudiante y apoderado
+      supabase.from = jest.fn().mockImplementation((table) => {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: table === 'tenants'
+              ? { id: mockTenantId, nombre: 'Escuela El Salvador', rbd: '00234-1' }
+              : table === 'estudiantes'
+              ? { id: 'est-123', nombre: 'Martín', apellido: 'González', rut: '21.456.789-0' }
+              : table === 'apoderados'
+              ? { id: 'apo-1', nombre: 'Juana', apellido: 'Pérez' }
+              : null,
+            error: null,
+          }),
+        }
+      })
+    })
+
+    it('debe retornar 200 y el Buffer del PDF oficial con cabecera application/pdf si el reporte está Aprobado', async () => {
+      const mockReporteAprobado = {
+        id: mockReporteId,
+        incidente_id: mockIncidenteId,
+        estudiante_id: 'est-123',
+        estado: 'Aprobado',
+        contenido_aprobado: { contexto: 'Texto contexto' },
+        estudiantes: { nombre: 'Martín', apellido: 'González' },
+      }
+
+      reportesService.obtenerReportePorId.mockResolvedValue(mockReporteAprobado)
+      const fakePdfBuffer = Buffer.from('%PDF-1.4 Mock PDF Stream')
+      pdfService.generarInformeOficialIncidentePDF.mockResolvedValue(fakePdfBuffer)
+
+      const res = await request(app)
+        .get(`/api/v1/incidentes/${mockIncidenteId}/reportes/${mockReporteId}/pdf`)
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/application\/pdf/)
+      expect(res.headers['content-disposition']).toMatch(/inline; filename=/)
+      expect(res.body).toEqual(fakePdfBuffer)
+      expect(pdfService.generarInformeOficialIncidentePDF).toHaveBeenCalled()
+    })
+
+    it('debe rechazar con 400 Bad Request si el reporte se encuentra en estado Borrador', async () => {
+      const mockReporteBorrador = {
+        id: mockReporteId,
+        incidente_id: mockIncidenteId,
+        estudiante_id: 'est-123',
+        estado: 'Borrador',
+      }
+
+      reportesService.obtenerReportePorId.mockResolvedValue(mockReporteBorrador)
+
+      const res = await request(app)
+        .get(`/api/v1/incidentes/${mockIncidenteId}/reportes/${mockReporteId}/pdf`)
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toMatch(/Debe aprobar el reporte antes de emitir el PDF/)
+      expect(pdfService.generarInformeOficialIncidentePDF).not.toHaveBeenCalled()
+    })
+
+    it('debe rechazar con 400 si el reporte no corresponde al incidente de la URL', async () => {
+      const mockReporteOtroIncidente = {
+        id: mockReporteId,
+        incidente_id: 'otro-incidente-id',
+        estado: 'Aprobado',
+      }
+
+      reportesService.obtenerReportePorId.mockResolvedValue(mockReporteOtroIncidente)
+
+      const res = await request(app)
+        .get(`/api/v1/incidentes/${mockIncidenteId}/reportes/${mockReporteId}/pdf`)
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toMatch(/no corresponde al incidente/)
+    })
+  })
+
 })

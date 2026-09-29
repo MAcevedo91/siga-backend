@@ -14,6 +14,7 @@ const {
   obtenerReporteHandler,
   editarBorradorHandler,
   aprobarReporteHandler,
+  descargarReportePdfHandler,
 } = require('../controllers/reportesController')
 
 const router = Router()
@@ -68,5 +69,9 @@ router.post(
   requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
   aprobarReporteHandler
 )
+
+
+// Descarga oficial de informe en formato PDF con membrete y firmas (solo reportes Aprobados)
+router.get('/:id/reportes/:reporteId/pdf', descargarReportePdfHandler)
 
 module.exports = router

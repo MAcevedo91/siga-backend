@@ -1,3 +1,5 @@
+const pdfService = require('../services/pdfService')
+const { supabase } = require('../utils/db')
 const reportesService = require('../services/reportesService')
 const logger = require('../utils/logger')
 
@@ -140,10 +142,99 @@ const aprobarReporteHandler = async (req, res, next) => {
   }
 }
 
+
+/**
+ * GET /api/v1/incidentes/:id/reportes/:reporteId/pdf
+ * Genera y descarga el archivo PDF oficial del reporte de convivencia escolar.
+ * Requisito normativo: El reporte DEBE estar en estado "Aprobado".
+ */
+const descargarReportePdfHandler = async (req, res, next) => {
+  try {
+    const { id: incidenteId, reporteId } = req.params
+    const tenantId = req.user.tenant_id
+
+    // 1. Obtener datos completos del reporte
+    const reporte = await reportesService.obtenerReportePorId(tenantId, reporteId)
+
+    // Validar que el reporte corresponda al incidente solicitado
+    if (reporte.incidente_id !== incidenteId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'El reporte solicitado no corresponde al incidente especificado',
+        statusCode: 400,
+      })
+    }
+
+    // 2. Control de inmutabilidad: Solo descargable si está Aprobado
+    if (reporte.estado !== 'Aprobado') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Debe aprobar el reporte antes de emitir el PDF oficial',
+        statusCode: 400,
+      })
+    }
+
+    // 3. Consultar datos del tenant (establecimiento escolar)
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, nombre, rbd, direccion')
+      .eq('id', tenantId)
+      .maybeSingle()
+
+    // 4. Consultar datos complementarios del estudiante (incluyendo curso)
+    const { data: estudianteData } = await supabase
+      .from('estudiantes')
+      .select(`
+        id, rut, nombre, apellido, es_pie, direccion,
+        cursos:curso_id ( id, nombre, nivel, letra )
+      `)
+      .eq('id', reporte.estudiante_id)
+      .maybeSingle()
+
+    // 5. Consultar apoderado titular
+    const { data: apoderado } = await supabase
+      .from('apoderados')
+      .select('id, nombre, apellido, rut, telefono, email')
+      .eq('estudiante_id', reporte.estudiante_id)
+      .eq('es_titular', true)
+      .maybeSingle()
+
+    // 6. Generar Buffer del PDF oficial con PDFKit
+    const estudianteCompleto = {
+      ...(reporte.estudiantes || {}),
+      ...(estudianteData || {}),
+    }
+
+    const incidenteCompleto = reporte.incidentes || { id: incidenteId }
+
+    const pdfBuffer = await pdfService.generarInformeOficialIncidentePDF({
+      reporte,
+      incidente: incidenteCompleto,
+      estudiante: estudianteCompleto,
+      tenant: tenant || {},
+      apoderado,
+    })
+
+    // 7. Enviar PDF con cabeceras de visualización y descarga
+    const apellidoEst = (estudianteCompleto.apellido || 'Alumno').replace(/\s+/g, '_')
+    const filename = `Informe_Incidente_${incidenteId.slice(0, 8)}_${apellidoEst}.pdf`
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+
+    return res.status(200).send(pdfBuffer)
+  } catch (err) {
+    logger.error('Error en descargarReportePdfHandler:', err)
+    next(err)
+  }
+}
+
 module.exports = {
   generarBorradorHandler,
   listarReportesIncidenteHandler,
   obtenerReporteHandler,
   editarBorradorHandler,
   aprobarReporteHandler,
+  descargarReportePdfHandler,
 }
