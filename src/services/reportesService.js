@@ -209,7 +209,13 @@ const guardarEdicionBorrador = async ({
     throw new Error('Error al guardar edición del reporte')
   }
 
-  return data
+  return {
+    ...actual,
+    ...data,
+    estudiantes: actual.estudiantes,
+    incidentes: actual.incidentes,
+    creador: actual.creador,
+  }
 }
 
 /**
@@ -364,7 +370,27 @@ const aprobarReporte = async ({
     logger.error('Error no bloqueante al despachar informe oficial por email al apoderado:', emailErr.message || emailErr)
   }
 
-  return data
+  // Buscar datos del aprobador para enriquecer respuesta si es posible
+  let aprobadorData = null
+  try {
+    const { data: usuarioAprobador } = await supabase
+      .from('usuarios')
+      .select('id, nombre, apellido, rol')
+      .eq('id', aprobadoPor)
+      .maybeSingle()
+    aprobadorData = usuarioAprobador
+  } catch (userErr) {
+    logger.warn('Fallo no bloqueante al consultar datos de aprobador:', userErr.message)
+  }
+
+  return {
+    ...actual,
+    ...data,
+    estudiantes: actual.estudiantes,
+    incidentes: actual.incidentes,
+    creador: actual.creador,
+    aprobador: aprobadorData || actual.aprobador || null,
+  }
 }
 
 /**
@@ -478,7 +504,10 @@ const generarBorradoresParaIncidente = async ({
       version: siguienteVersion,
     })
 
-    reportesGenerados.push(nuevoReporte)
+    reportesGenerados.push({
+      ...nuevoReporte,
+      estudiantes: estudianteFoco,
+    })
   }
 
   return reportesGenerados
