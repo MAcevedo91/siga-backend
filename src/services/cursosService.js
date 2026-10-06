@@ -51,7 +51,10 @@ const obtenerPeriodoActivo = async (tenantId) => {
 const listarCursos = async (tenantId, filtros = {}) => {
   let query = supabase
     .from('cursos')
-    .select('id, nombre, nivel, letra, periodo_id, anio_academico')
+    .select(`
+      id, nombre, nivel, letra, periodo_id, anio_academico, profesor_jefe_id,
+      usuarios!cursos_profesor_jefe_id_fkey ( id, nombre, apellido, avatar_url )
+    `)
     .eq('tenant_id', tenantId)
     .order('nombre', { ascending: true })
 
@@ -59,13 +62,43 @@ const listarCursos = async (tenantId, filtros = {}) => {
     query = query.eq('periodo_id', filtros.periodo_id)
   }
 
-  const { data, error } = await query
-  if (error) {
-    logger.error('Error al listar cursos:', error)
-    throw error
+  if (filtros.anio) {
+    query = query.eq('anio_academico', Number(filtros.anio))
   }
 
-  return data || []
+  const { data, error } = await query
+  if (error) {
+    logger.warn(`[CURSOS_SERVICE] Error consultando cursos con FK profesor_jefe, ejecutando fallback: ${error.message}`)
+    // Fallback sin join de usuarios
+    let fallbackQuery = supabase
+      .from('cursos')
+      .select('id, nombre, nivel, letra, periodo_id, anio_academico, profesor_jefe_id')
+      .eq('tenant_id', tenantId)
+      .order('nombre', { ascending: true })
+
+    if (filtros.periodo_id) {
+      fallbackQuery = fallbackQuery.eq('periodo_id', filtros.periodo_id)
+    }
+    if (filtros.anio) {
+      fallbackQuery = fallbackQuery.eq('anio_academico', Number(filtros.anio))
+    }
+
+    const { data: fallbackData, error: errFallback } = await fallbackQuery
+    if (errFallback) {
+      logger.error('Error al listar cursos en fallback:', errFallback)
+      throw errFallback
+    }
+    return fallbackData || []
+  }
+
+  return (data || []).map(c => ({
+    ...c,
+    profesor_jefe: c.usuarios ? {
+      id: c.usuarios.id,
+      nombre: `${c.usuarios.nombre || ''} ${c.usuarios.apellido || ''}`.trim(),
+      avatar_url: c.usuarios.avatar_url,
+    } : null,
+  }))
 }
 
 /**

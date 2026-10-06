@@ -17,8 +17,9 @@ router.use('/cursos',      require('../cursos.routes'))
 router.use('/riesgo',      require('../riesgo'))
 router.use('/reportes',    require('../reportes'))
 router.use('/mensajes',    require('./mensajes'))
-router.use('/broadcasts',  require('./broadcasts'))
+router.use('/broadcasts',    require('./broadcasts'))
 router.use('/configuracion', require('../configuracion.routes'))
+router.use('/cierre-anio',   require('../cierreAnio.routes'))
 
 
 // Additional v1 routes that were mounted separately in app.js
