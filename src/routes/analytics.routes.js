@@ -18,4 +18,10 @@ router.get('/top-estudiantes', cacheMiddleware(300), analyticsController.getTopE
 // GET /api/v1/analytics/tiempo-resolucion - Tiempo promedio resolución (cache 5min)
 router.get('/tiempo-resolucion', cacheMiddleware(300), analyticsController.getTiempoResolucion)
 
+// GET /api/v1/analytics/mapa-calor-cursos - Matriz agregada Curso vs Mes escolar (cache 3min)
+router.get('/mapa-calor-cursos', cacheMiddleware(180), analyticsController.getMapaCalorCursos)
+
+// GET /api/v1/analytics/mapa-calor-cursos/detalle - Diagnóstico pedagógico anónimo de celda (cache 3min)
+router.get('/mapa-calor-cursos/detalle', cacheMiddleware(180), analyticsController.getDetalleCeldaMapaCalor)
+
 module.exports = router

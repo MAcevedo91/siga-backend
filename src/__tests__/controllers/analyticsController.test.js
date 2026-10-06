@@ -296,4 +296,165 @@ describe('analyticsController', () => {
       })
     })
   })
+
+  describe('getMapaCalorCursos', () => {
+    it('should return heatmap matrix for authorized Directivo', async () => {
+      req.user = { tenant_id: mockTenantId, rol: 'Directivo' }
+      req.query = { anio: '2026' }
+
+      const mockCursos = [
+        { id: 'c-1', nombre: '1° Básico A', nivel: '1° Básico', letra: 'A' },
+        { id: 'c-2', nombre: '2° Básico B', nivel: '2° Básico', letra: 'B' }
+      ]
+
+      const mockIncidentes = [
+        {
+          incidente_id: 'inc-1',
+          estudiante_id: 'est-1',
+          estudiantes: { id: 'est-1', curso_id: 'c-1', tenant_id: mockTenantId },
+          incidentes: { id: 'inc-1', fecha: '2026-03-15', gravedad: 'Leve' }
+        },
+        {
+          incidente_id: 'inc-2',
+          estudiante_id: 'est-2',
+          estudiantes: { id: 'est-2', curso_id: 'c-1', tenant_id: mockTenantId },
+          incidentes: { id: 'inc-2', fecha: '2026-03-20', gravedad: 'Grave' }
+        }
+      ]
+
+      supabase.from = jest.fn((table) => {
+        if (table === 'cursos') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockResolvedValue({ data: mockCursos, error: null })
+          }
+        }
+        if (table === 'incidente_estudiantes') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            lte: jest.fn().mockResolvedValue({ data: mockIncidentes, error: null })
+          }
+        }
+        return { select: jest.fn().mockReturnThis() }
+      })
+
+      await analyticsController.getMapaCalorCursos(req, res)
+
+      expect(res.json).toHaveBeenCalled()
+      const jsonResponse = res.json.mock.calls[0][0]
+      expect(jsonResponse.success).toBe(true)
+      expect(jsonResponse.data).toHaveProperty('anio', 2026)
+      expect(jsonResponse.data.cursos.length).toBe(2)
+      // Check march for curso 1 has total 2, leves 1, graves 1, alerta amarillo
+      expect(jsonResponse.data.cursos[0].meses['3'].total).toBe(2)
+      expect(jsonResponse.data.cursos[0].meses['3'].alerta).toBe('amarillo')
+    })
+
+    it('should return 403 Forbidden for unauthorized role', async () => {
+      req.user = { tenant_id: mockTenantId, rol: 'Apoderado' }
+      await analyticsController.getMapaCalorCursos(req, res)
+
+      expect(res.status).toHaveBeenCalledWith(403)
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'No tienes autorización para consultar el mapa de calor de convivencia escolar'
+      })
+    })
+
+    it('should handle empty cursos gracefully', async () => {
+      req.user = { tenant_id: mockTenantId, rol: 'Administrador' }
+      supabase.from = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null })
+      })
+
+      await analyticsController.getMapaCalorCursos(req, res)
+
+      expect(res.json).toHaveBeenCalled()
+      const jsonResponse = res.json.mock.calls[0][0]
+      expect(jsonResponse.data.cursos).toEqual([])
+      expect(jsonResponse.data.resumen_global.total_incidentes).toBe(0)
+    })
+  })
+
+  describe('getDetalleCeldaMapaCalor', () => {
+    it('should return 400 if curso_id or mes is missing', async () => {
+      req.query = { curso_id: 'c-1' } // missing mes
+      await analyticsController.getDetalleCeldaMapaCalor(req, res)
+
+      expect(res.status).toHaveBeenCalledWith(400)
+    })
+
+    it('should return 400 if mes is invalid', async () => {
+      req.query = { curso_id: 'c-1', mes: '15' }
+      await analyticsController.getDetalleCeldaMapaCalor(req, res)
+
+      expect(res.status).toHaveBeenCalledWith(400)
+    })
+
+    it('should return 404 if curso is not found', async () => {
+      req.query = { curso_id: 'c-nonexistent', mes: '5', anio: '2026' }
+      supabase.from = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } })
+      })
+
+      await analyticsController.getDetalleCeldaMapaCalor(req, res)
+
+      expect(res.status).toHaveBeenCalledWith(404)
+    })
+
+    it('should return pedagogical diagnostics without student names', async () => {
+      req.query = { curso_id: 'c-1', mes: '10', anio: '2026' }
+      const mockCurso = { id: 'c-1', nombre: '6° Básico B', nivel: '6° Básico', letra: 'B' }
+      const mockIncidentes = [
+        {
+          incidente_id: 'inc-10',
+          estudiante_id: 'est-1',
+          estudiantes: { id: 'est-1', curso_id: 'c-1' },
+          incidentes: {
+            id: 'inc-10',
+            fecha: '2026-10-12',
+            gravedad: 'Grave',
+            estado: 'En Investigación',
+            tipos_abordaje: { nombre: 'Agresión verbal en patio' }
+          }
+        }
+      ]
+
+      supabase.from = jest.fn((table) => {
+        if (table === 'cursos') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({ data: mockCurso, error: null })
+          }
+        }
+        if (table === 'incidente_estudiantes') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            lte: jest.fn().mockResolvedValue({ data: mockIncidentes, error: null })
+          }
+        }
+        return { select: jest.fn().mockReturnThis() }
+      })
+
+      await analyticsController.getDetalleCeldaMapaCalor(req, res)
+
+      expect(res.json).toHaveBeenCalled()
+      const jsonResponse = res.json.mock.calls[0][0]
+      expect(jsonResponse.success).toBe(true)
+      expect(jsonResponse.data.diagnostico.total_incidentes).toBe(1)
+      expect(jsonResponse.data.diagnostico.gravedad.Grave).toBe(1)
+      expect(jsonResponse.data.diagnostico).toHaveProperty('recomendacion_pedagogica')
+      expect(jsonResponse.data.diagnostico).toHaveProperty('nota_privacidad')
+      // Ensure student names are not present
+      expect(JSON.stringify(jsonResponse)).not.toContain('nombre_estudiante')
+    })
+  })
 })
