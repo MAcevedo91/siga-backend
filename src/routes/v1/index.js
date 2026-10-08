@@ -12,7 +12,6 @@ router.use('/estudiantes', require('../estudiantes.routes'))
 router.use('/incidentes',  require('../incidentes.routes'))
 router.use('/protocolos',  require('../protocolos.routes'))
 router.use('/dashboard',   require('../dashboard.routes'))
-router.use('/asistencia',  require('../asistencia.routes'))
 router.use('/cursos',      require('../cursos.routes'))
 router.use('/riesgo',      require('../riesgo'))
 router.use('/reportes',    require('../reportes'))
@@ -20,6 +19,7 @@ router.use('/mensajes',    require('./mensajes'))
 router.use('/broadcasts',    require('./broadcasts'))
 router.use('/configuracion', require('../configuracion.routes'))
 router.use('/cierre-anio',   require('../cierreAnio.routes'))
+router.use('/rice',          require('../rice.routes'))
 
 
 // Additional v1 routes that were mounted separately in app.js

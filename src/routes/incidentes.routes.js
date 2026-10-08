@@ -26,9 +26,9 @@ router.get('/tipos-abordaje', tiposAbordajeHandler)
 router.get('/',    listarHandler)
 router.get('/:id', obtenerHandler)
 
-// Creación — Administrador, Equipo de Formación e Inspector
+// Creación — Administrador, Equipo de Formación, Inspector y Docente
 router.post('/',
-  requireRole('Administrador', 'Equipo de Formación', 'Inspector'),
+  requireRole('Administrador', 'Equipo de Formación', 'Inspector', 'Docente'),
   crearHandler
 )
 
