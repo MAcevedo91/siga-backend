@@ -444,12 +444,77 @@ async function getMapaCalorCursos(req, res) {
       return a.nombre.localeCompare(b.nombre, 'es', { numeric: true })
     })
 
+    // 7. Agrupar jerárquicamente por Nivel (ej. "8° Básico" consolida "8° A", "8° B", etc.)
+    const mapaNiveles = new Map()
+
+    cursosFormateados.forEach(curso => {
+      const nivelNombre = curso.nivel || curso.nombre.replace(/\s+[A-Za-z]$/, '').trim()
+      if (!mapaNiveles.has(nivelNombre)) {
+        const mesesConsolidado = {}
+        MESES_ESCOLAR.forEach(m => {
+          mesesConsolidado[m.numero] = {
+            total: 0,
+            leves: 0,
+            graves: 0,
+            gravisimas: 0,
+            alerta: 'verde'
+          }
+        })
+
+        mapaNiveles.set(nivelNombre, {
+          nivel: nivelNombre,
+          total_anual: 0,
+          graves_anual: 0,
+          gravisimas_anual: 0,
+          alerta_general: 'verde',
+          meses: mesesConsolidado,
+          cursos: []
+        })
+      }
+
+      const grupo = mapaNiveles.get(nivelNombre)
+      grupo.cursos.push(curso)
+      grupo.total_anual += curso.total_anual
+      grupo.graves_anual += curso.graves_anual
+      grupo.gravisimas_anual += curso.gravisimas_anual
+
+      MESES_ESCOLAR.forEach(m => {
+        const cMes = curso.meses[m.numero]
+        const gMes = grupo.meses[m.numero]
+        gMes.total += cMes.total
+        gMes.leves += cMes.leves
+        gMes.graves += cMes.graves
+        gMes.gravisimas += cMes.gravisimas
+      })
+    })
+
+    // Calcular alertas consolidadas para cada nivel
+    const nivelesAgrupados = Array.from(mapaNiveles.values()).map(grupo => {
+      MESES_ESCOLAR.forEach(m => {
+        const gMes = grupo.meses[m.numero]
+        gMes.alerta = calcularNivelAlerta(gMes.total, gMes.graves, gMes.gravisimas)
+      })
+      grupo.alerta_general = calcularNivelAlerta(grupo.total_anual, grupo.graves_anual, grupo.gravisimas_anual)
+      return grupo
+    })
+
+    // Ordenar niveles según jerarquía oficial
+    nivelesAgrupados.sort((a, b) => {
+      const idxA = ORDEN_NIVELES_CHILE.findIndex(n => n.toLowerCase() === (a.nivel || '').trim().toLowerCase())
+      const idxB = ORDEN_NIVELES_CHILE.findIndex(n => n.toLowerCase() === (b.nivel || '').trim().toLowerCase())
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB
+      if (idxA !== -1) return -1
+      if (idxB !== -1) return 1
+      return a.nivel.localeCompare(b.nivel, 'es', { numeric: true })
+    })
+
     res.json({
       success: true,
       data: {
         anio,
         meses: MESES_ESCOLAR,
         cursos: cursosFormateados,
+        niveles_agrupados: nivelesAgrupados,
         resumen_global: {
           total_incidentes: totalIncidentesAnio,
           cursos_rojos: cursosRojos,
