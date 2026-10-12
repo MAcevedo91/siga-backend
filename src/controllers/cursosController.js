@@ -70,9 +70,39 @@ const obtenerEstudiantesCursoHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * PATCH /api/v1/cursos/:id/profesor-jefe
+ * Asigna o desasigna un profesor jefe al curso con confirmación de contraseña
+ */
+const asignarProfesorJefeHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { profesor_jefe_id, password_confirmacion } = req.body
+
+    const resultado = await cursosService.asignarProfesorJefe(
+      req.user.tenant_id,
+      req.user.user_id || req.user.id,
+      id,
+      profesor_jefe_id,
+      password_confirmacion
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: resultado.profesor_jefe
+        ? `Profesor jefe ${resultado.profesor_jefe.nombre} asignado exitosamente a ${resultado.curso_nombre}`
+        : `Profesor jefe desasignado exitosamente de ${resultado.curso_nombre}`,
+      data: resultado,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
   listarCursosHandler,
   obtenerNivelesHandler,
   obtenerLetrasHandler,
   obtenerEstudiantesCursoHandler,
+  asignarProfesorJefeHandler,
 }

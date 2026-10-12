@@ -1,3 +1,4 @@
+const bcrypt = require('bcrypt')
 const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
 
@@ -231,10 +232,101 @@ const obtenerEstudiantesPorCurso = async (tenantId, cursoId) => {
   }))
 }
 
+/**
+ * Asigna o desasigna un Profesor Jefe a un curso.
+ * Requiere confirmación con contraseña del usuario autenticado para seguridad.
+ */
+const asignarProfesorJefe = async (tenantId, usuarioEjecutorId, cursoId, nuevoProfesorId, passwordConfirmacion) => {
+  if (!passwordConfirmacion || typeof passwordConfirmacion !== 'string') {
+    const err = new Error('La contraseña de autorización es requerida')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 1. Obtener datos y hash de contraseña del usuario ejecutor
+  const { data: ejecutor, error: errEjecutor } = await supabase
+    .from('usuarios')
+    .select('id, password, activo')
+    .eq('id', usuarioEjecutorId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (errEjecutor || !ejecutor || !ejecutor.activo) {
+    const err = new Error('Usuario ejecutor no autorizado o inactivo')
+    err.statusCode = 401
+    throw err
+  }
+
+  // 2. Verificar contraseña con bcrypt
+  const passwordValida = await bcrypt.compare(passwordConfirmacion, ejecutor.password)
+  if (!passwordValida) {
+    const err = new Error('Contraseña de autorización incorrecta')
+    err.statusCode = 401
+    throw err
+  }
+
+  // 3. Verificar que el curso exista y pertenezca al tenant
+  const { data: curso, error: errCurso } = await supabase
+    .from('cursos')
+    .select('id, nombre')
+    .eq('id', cursoId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (errCurso || !curso) {
+    const err = new Error('Curso no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 4. Si se asigna un profesor, verificar que exista, esté activo y pertenezca al tenant
+  let datosProfesor = null
+  if (nuevoProfesorId) {
+    const { data: docente, error: errDocente } = await supabase
+      .from('usuarios')
+      .select('id, nombre, apellido, email, avatar_url, activo')
+      .eq('id', nuevoProfesorId)
+      .eq('tenant_id', tenantId)
+      .single()
+
+    if (errDocente || !docente || !docente.activo) {
+      const err = new Error('El docente seleccionado no existe o está inactivo')
+      err.statusCode = 400
+      throw err
+    }
+
+    datosProfesor = {
+      id: docente.id,
+      nombre: `${docente.nombre || ''} ${docente.apellido || ''}`.trim(),
+      email: docente.email,
+      avatar_url: docente.avatar_url,
+    }
+  }
+
+  // 5. Actualizar profesor_jefe_id en el curso
+  const { error: errUpdate } = await supabase
+    .from('cursos')
+    .update({ profesor_jefe_id: nuevoProfesorId || null })
+    .eq('id', cursoId)
+    .eq('tenant_id', tenantId)
+
+  if (errUpdate) {
+    logger.error(`Error al asignar profesor jefe al curso ${cursoId}:`, errUpdate)
+    throw errUpdate
+  }
+
+  return {
+    curso_id: cursoId,
+    curso_nombre: curso.nombre,
+    profesor_jefe: datosProfesor,
+  }
+}
+
 module.exports = {
   obtenerPeriodoActivo,
   listarCursos,
   obtenerNiveles,
   obtenerLetrasPorNivel,
   obtenerEstudiantesPorCurso,
+  asignarProfesorJefe,
 }
