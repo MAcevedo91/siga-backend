@@ -17,6 +17,8 @@ router.use('/cursos',        require('./cursos.routes'))
 router.use('/configuracion', require('./configuracion.routes'))
 router.use('/cierre-anio',   require('./cierreAnio.routes'))
 router.use('/rice',          require('./rice.routes'))
+router.use('/mediaciones',   require('./mediaciones.routes'))
 
 module.exports = router
+
 

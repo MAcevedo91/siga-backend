@@ -20,6 +20,8 @@ router.use('/broadcasts',    require('./broadcasts'))
 router.use('/configuracion', require('../configuracion.routes'))
 router.use('/cierre-anio',   require('../cierreAnio.routes'))
 router.use('/rice',          require('../rice.routes'))
+router.use('/mediaciones',   require('../mediaciones.routes'))
+
 
 
 // Additional v1 routes that were mounted separately in app.js

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aviso Formativo: Espacio de Mediación Escolar</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f9fafb;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 20px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header Institucional -->
+          <tr>
+            <td style="background-color: #0d9488; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 22px;">Espacio de Mediación y Diálogo Formativo</h1>
+              <p style="color: #ccfbf1; margin: 8px 0 0 0; font-size: 14px;">Escuela El Salvador — Convivencia Escolar Restaurativa</p>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 30px;">
+              <p style="font-size: 16px; color: #374151; line-height: 1.6;">Estimado/a apoderado/a,</p>
+
+              <p style="font-size: 15px; color: #374151; line-height: 1.6;">
+                Junto con saludarle cordialmente, le comunicamos que el estudiante <strong>{{estudianteNombre}}</strong> ha sido convocado a participar en una sesión de mediación escolar y diálogo formativo, orientada a la resolución pacífica, colaborativa y constructiva de situaciones de convivencia escolar.
+              </p>
+
+              <!-- Box con Detalles de la Sesión -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0fdfa; border-left: 4px solid #0d9488; border-radius: 4px; margin: 20px 0;">
+                <tr>
+                  <td style="padding: 18px 20px;">
+                    <p style="margin: 4px 0; color: #134e4a; font-size: 14px;"><strong>Folio Expediente:</strong> {{folio}}</p>
+                    <p style="margin: 4px 0; color: #134e4a; font-size: 14px;"><strong>Fecha y Hora Programada:</strong> {{fechaProgramada}}</p>
+                    <p style="margin: 4px 0; color: #134e4a; font-size: 14px;"><strong>Lugar:</strong> {{lugarSesion}}</p>
+                    <p style="margin: 4px 0; color: #134e4a; font-size: 14px;"><strong>Mediador/a a Cargo:</strong> {{mediadorNombre}}</p>
+                    <p style="margin: 4px 0; color: #134e4a; font-size: 14px;"><strong>Objetivo del Encuentro:</strong> {{motivo}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Mensaje Personalizado si existe -->
+              <p style="font-size: 14px; color: #4b5563; line-height: 1.6; font-style: italic;">
+                {{mensajePersonalizado}}
+              </p>
+
+              <div style="background-color: #fefce8; border: 1px solid #fef08a; border-radius: 6px; padding: 14px; margin: 20px 0;">
+                <p style="font-size: 13px; color: #854d0e; margin: 0; line-height: 1.5;">
+                  <strong>Principio de Confidencialidad y Resguardo:</strong> Conforme a las orientaciones de la Superintendencia de Educación (Circular N° 482) y el Reglamento Interno (RICE), este espacio garantiza el respeto mutuo, la voluntariedad en los acuerdos y el resguardo estricto de la intimidad y dignidad de los estudiantes.
+                </p>
+              </div>
+
+              <p style="font-size: 15px; color: #374151; line-height: 1.6;">
+                Agradecemos su constante apoyo desde el hogar fomentando en su pupilo/a la empatía y la resolución constructiva de conflictos.
+              </p>
+
+              <p style="font-size: 15px; color: #374151; line-height: 1.6; margin-top: 25px;">
+                Saluda atentamente,<br>
+                <strong>Equipo de Convivencia Escolar y Formación</strong><br>
+                <span style="color: #6b7280; font-size: 13px;">Escuela El Salvador</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f3f4f6; padding: 16px; text-align: center; border-radius: 0 0 8px 8px;">
+              <p style="font-size: 12px; color: #9ca3af; margin: 0;">
+                Este es un mensaje institucional generado por el Sistema SIGA Escolar. Por favor, no responda directamente a este correo.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
