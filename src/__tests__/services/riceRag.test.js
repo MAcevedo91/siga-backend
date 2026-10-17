@@ -14,6 +14,7 @@ const {
 const {
   consultarRice,
   generarRespuestaFallback,
+  generarOrientacionClimaAulaRICE,
 } = require('../../services/riceRagService')
 
 const { supabase } = require('../../utils/db')
@@ -220,6 +221,44 @@ Constituyen faltas graves la reiteración de agresiones verbales o ciberacoso.`
       const respuesta = generarRespuestaFallback('¿Cuál es el plazo?', chunks)
       expect(respuesta).toContain('Artículo 15')
       expect(respuesta).toContain('Se citará al apoderado')
+    })
+
+    test('generarOrientacionClimaAulaRICE retorna clima favorable inmediato cuando total es 0', async () => {
+      const res = await generarOrientacionClimaAulaRICE({
+        tenantId: 'tenant-123',
+        cursoNombre: '4° Básico A',
+        mesNombre: 'Octubre',
+        anio: 2026,
+        metricas: { total: 0 },
+        tipologias: [],
+      })
+
+      expect(res.es_ia).toBe(false)
+      expect(res.recomendacion).toContain('Clima favorable')
+      expect(res.recomendacion).toContain('4° Básico A')
+    })
+
+    test('generarOrientacionClimaAulaRICE recupera fuentes RICE y genera orientacion cuando hay incidentes', async () => {
+      supabase.rpc.mockResolvedValueOnce({
+        data: [
+          { articulo: 'Artículo 28', seccion: 'Resolución de Conflictos', contenido: 'Se promoverá el diálogo formativo.' },
+        ],
+        error: null,
+      })
+
+      const res = await generarOrientacionClimaAulaRICE({
+        tenantId: 'tenant-123',
+        cursoNombre: '6° Básico B',
+        mesNombre: 'Octubre',
+        anio: 2026,
+        metricas: { total: 2, leves: 1, graves: 1, gravisimas: 0 },
+        tipologias: [{ nombre: 'Rencillas en patio', cantidad: 2 }],
+      })
+
+      expect(res).toBeDefined()
+      expect(res.recomendacion).toBeDefined()
+      expect(res.fuentes.length).toBe(1)
+      expect(res.fuentes[0].articulo).toBe('Artículo 28')
     })
   })
 })
