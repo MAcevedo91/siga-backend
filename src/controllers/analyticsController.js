@@ -1,5 +1,6 @@
 const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
+const { generarOrientacionClimaAulaRICE } = require('../services/riceRagService')
 
 // Helper: Get date range for current and previous month
 function getMonthRanges() {
@@ -649,8 +650,38 @@ async function getDetalleCeldaMapaCalor(req, res) {
 
     const total = incidentesVistos.size
     const alerta = calcularNivelAlerta(total, gravedadConteo.Grave, gravedadConteo['Gravísima'])
-    const recomendacion = generarRecomendacionPedagogica(total, gravedadConteo.Grave, gravedadConteo['Gravísima'])
     const nombreMes = MESES_ESCOLAR.find(m => m.numero === mesNum)?.nombreCompleto || `Mes ${mesNum}`
+
+    const tipologiasArray = Object.entries(tipologiasConteo).map(([nombre, cantidad]) => ({
+      nombre,
+      cantidad,
+      porcentaje: total > 0 ? Math.round((cantidad / total) * 100) : 0
+    })).sort((a, b) => b.cantidad - a.cantidad)
+
+    // Generar recomendación pedagógica con IA fundamentada en el RICE (con fallback heurístico resiliente)
+    let orientacion = {
+      recomendacion: generarRecomendacionPedagogica(total, gravedadConteo.Grave, gravedadConteo['Gravísima']),
+      fuentes: [],
+      es_ia: false
+    }
+
+    try {
+      orientacion = await generarOrientacionClimaAulaRICE({
+        tenantId,
+        cursoNombre: curso.nombre,
+        mesNombre: nombreMes,
+        anio: anioNum,
+        metricas: {
+          total,
+          leves: gravedadConteo.Leve,
+          graves: gravedadConteo.Grave,
+          gravisimas: gravedadConteo['Gravísima']
+        },
+        tipologias: tipologiasArray
+      })
+    } catch (orientErr) {
+      logger.warn('Error al generar orientación IA de clima de aula, usando regla heurística:', orientErr.message)
+    }
 
     res.json({
       success: true,
@@ -666,13 +697,11 @@ async function getDetalleCeldaMapaCalor(req, res) {
           estudiantes_involucrados_total: estudiantesVistos.size,
           nivel_alerta: alerta,
           gravedad: gravedadConteo,
-          tipologias: Object.entries(tipologiasConteo).map(([nombre, cantidad]) => ({
-            nombre,
-            cantidad,
-            porcentaje: total > 0 ? Math.round((cantidad / total) * 100) : 0
-          })).sort((a, b) => b.cantidad - a.cantidad),
+          tipologias: tipologiasArray,
           estados: estadosConteo,
-          recomendacion_pedagogica: recomendacion,
+          recomendacion_pedagogica: orientacion.recomendacion,
+          fuentes_rice: orientacion.fuentes || [],
+          es_ia: orientacion.es_ia || false,
           nota_privacidad: 'Información agregada con propósitos pedagógicos y formativos. Conforme a la Ley N° 19.628, se resguarda la privacidad de los menores.'
         }
       }

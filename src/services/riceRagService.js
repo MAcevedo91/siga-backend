@@ -175,8 +175,163 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
   }
 }
 
+const SYSTEM_INSTRUCTION_CLIMA_AULA = `Eres el Especialista en Convivencia Escolar y Asesor RICE de SIGA Escolar (Chile).
+Tu propósito es entregar una orientación pedagógica breve (1 o 2 párrafos concisos, entre 60 y 90 palabras), formativa y con fundamentación normativa para un curso escolar específico durante un mes lectivo determinado, basada estrictamente en los fragmentos del RICE provistos dentro de la etiqueta <contexto_normativo_rice>.
+
+REGLAS DE ORO OBLIGATORIAS:
+1. CITAS AL RICE: Cita de forma explícita el Artículo o Capítulo del RICE más relevante para abordar las tipologías observadas (ej: "Conforme al Art. 28 sobre resolución formativa de conflictos...").
+2. ENFOQUE RESTAURATIVO: Recomienda acciones formativas concretas y pedagógicas (ej: mediación escolar entre pares, dinámica de aula con el Profesor Jefe, refuerzo de acuerdos de convivencia en Consejo de Curso, monitoreo preventivo de patio en recreos).
+3. PRIVACIDAD TOTAL: Los datos son estrictamente agregados por curso. No asumas ni menciones identidades individuales (cumplimiento Ley N° 19.628).
+4. TONO: Profesional, constructivo, institucional y claro.`
+
+/**
+ * Genera una recomendación pedagógica basada en IA y el RICE para el clima de aula de un curso
+ * 
+ * @param {Object} params { tenantId, cursoNombre, mesNombre, anio, metricas, tipologias }
+ * @returns {Promise<{ recomendacion: string, fuentes: Array<{ articulo, seccion }>, es_ia: boolean }>}
+ */
+const generarOrientacionClimaAulaRICE = async ({
+  tenantId,
+  cursoNombre,
+  mesNombre,
+  anio,
+  metricas = {},
+  tipologias = [],
+}) => {
+  const { total = 0, graves = 0, gravisimas = 0, leves = 0 } = metricas
+
+  // 1. Si no hay incidentes, retorno de clima favorable inmediato
+  if (total === 0) {
+    return {
+      recomendacion: `Clima favorable para ${cursoNombre} durante ${mesNombre} ${anio}: Sin incidentes registrados. Se aconseja mantener el reforzamiento positivo y las dinámicas regulares de convivencia.`,
+      fuentes: [],
+      es_ia: false,
+    }
+  }
+
+  // 2. Consulta semántica construida a partir de tipologías y severidad
+  const nombresTipologias = tipologias.map((t) => t.nombre).filter(Boolean).join(', ')
+  const consultaSemantica = `procedimiento formativo y medidas ante ${nombresTipologias || 'conflictos de convivencia escolar'} faltas leves y graves`
+
+  let chunksRecuperados = []
+  try {
+    const vectorConsulta = await generarEmbeddingTexto(consultaSemantica)
+    const { data, error } = await supabase.rpc('buscar_contexto_rice', {
+      p_tenant_id: tenantId,
+      p_embedding: vectorConsulta,
+      p_match_count: 3,
+      p_similarity_threshold: 0.35,
+    })
+
+    if (error) {
+      logger.warn('Error al buscar contexto RICE para clima de aula:', error.message)
+      const { data: chunksDirectos } = await supabase
+        .from('rice_chunks')
+        .select('id, seccion, articulo, contenido')
+        .eq('tenant_id', tenantId)
+        .limit(3)
+      chunksRecuperados = chunksDirectos || []
+    } else {
+      chunksRecuperados = data || []
+    }
+  } catch (err) {
+    logger.warn('Fallo en recuperación vectorial RICE para clima de aula:', err.message)
+  }
+
+  // Fallback determinista resiliente
+  const fallbackDeterministic = () => {
+    let base = 'Clima Favorable: Mantener reforzamiento positivo y seguimiento regular de convivencia.'
+    if (gravisimas >= 1) {
+      base = 'Alerta Crítica: Activar de inmediato protocolo RICE normativo, notificar a Inspectoría General y convocar a equipo directivo.'
+    } else if (graves >= 2 || total >= 6) {
+      base = 'Alerta Alta: Focalizar intervención con Dupla Psicosocial, realizar dinámica de aula y citar a apoderados de alumnos involucrados.'
+    } else if (graves === 1 || total >= 2) {
+      base = 'Alerta Preventiva: Monitorear clima de aula en Consejo de Profesores y realizar taller de resolución pacífica de conflictos.'
+    }
+    return {
+      recomendacion: base,
+      fuentes: chunksRecuperados.map((c) => ({ articulo: c.articulo, seccion: c.seccion })),
+      es_ia: false,
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey || apiKey === 'your-gemini-api-key' || process.env.NODE_ENV === 'test') {
+    return fallbackDeterministic()
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey })
+    const contextoXml = chunksRecuperados.length > 0
+      ? chunksRecuperados.map((c, i) => `<fragmento id="${i + 1}" articulo="${c.articulo || ''}" seccion="${c.seccion || ''}">\n${c.contenido}\n</fragmento>`).join('\n')
+      : `<fragmento id="1" articulo="Circular N° 482 Supereduc y Principios RICE" seccion="Gestión Formativa y Restaurativa">
+Toda situación de convivencia debe priorizar el diálogo pedagógico, la escucha activa, la mediación formativa entre pares y el fortalecimiento de acuerdos de aula con el Profesor Jefe y Dupla Psicosocial antes de aplicar medidas sancionatorias.
+</fragmento>`
+
+    const promptUsuario = `Curso: ${cursoNombre}
+Período: ${mesNombre} ${anio}
+Métricas acumuladas del aula: ${total} incidentes en total (${leves} leves, ${graves} graves, ${gravisimas} gravísimas).
+Tipologías detectadas: ${nombresTipologias || 'Conflictos generales de convivencia'}.
+
+Fragmentos del Reglamento Interno (RICE):
+<contexto_normativo_rice>
+${contextoXml}
+</contexto_normativo_rice>
+
+Entrega la orientación formativa y pedagógica pertinente para el Encargado de Convivencia y el Profesor Jefe fundamentada en el RICE.`
+
+    const candidateModels = [
+      process.env.GEMINI_MODEL,
+      'gemini-3-flash-preview',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+    ].filter(Boolean)
+
+    let textoRespuesta = ''
+
+    for (const m of candidateModels) {
+      try {
+        const resp = await ai.models.generateContent({
+          model: m,
+          contents: promptUsuario,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION_CLIMA_AULA,
+            temperature: 0.2,
+          },
+        })
+        if (resp?.text) {
+          textoRespuesta = resp.text
+          break
+        }
+      } catch (err) {
+        logger.warn(`Modelo ${m} falló en orientacion clima aula (${err.message}). Probando siguiente...`)
+      }
+    }
+
+    if (!textoRespuesta) {
+      return fallbackDeterministic()
+    }
+
+    return {
+      recomendacion: textoRespuesta.trim(),
+      fuentes: chunksRecuperados.length > 0
+        ? chunksRecuperados.map((c) => ({
+            articulo: c.articulo,
+            seccion: c.seccion,
+          }))
+        : [{ articulo: 'Circular N° 482', seccion: 'Superintendencia de Educación' }],
+      es_ia: true,
+    }
+  } catch (error) {
+    logger.error('Error generando orientación clima aula con IA:', error)
+    return fallbackDeterministic()
+  }
+}
+
 module.exports = {
   SYSTEM_INSTRUCTION_RAG,
+  SYSTEM_INSTRUCTION_CLIMA_AULA,
   generarRespuestaFallback,
   consultarRice,
+  generarOrientacionClimaAulaRICE,
 }
