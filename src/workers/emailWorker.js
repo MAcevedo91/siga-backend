@@ -4,7 +4,7 @@ const logger = require('../utils/logger')
 
 // Process email jobs
 emailQueue.process('send-email', async (job) => {
-  const { to, cc, bcc, subject, html, text } = job.data
+  const { to, cc, bcc, subject, html, text, attachments } = job.data
 
   logger.info('Processing email job', {
     jobId: job.id,
@@ -25,6 +25,19 @@ emailQueue.process('send-email', async (job) => {
 
     if (cc) mailOptions.cc = cc
     if (bcc) mailOptions.bcc = bcc
+    if (attachments && Array.isArray(attachments)) {
+      mailOptions.attachments = attachments.map(att => {
+        // Si el contenido viene codificado en base64 desde Bull queue, reconstituir Buffer
+        if (att.content && typeof att.content === 'string' && att.encoding === 'base64') {
+          return {
+            filename: att.filename,
+            content: Buffer.from(att.content, 'base64'),
+            contentType: att.contentType || 'application/pdf',
+          }
+        }
+        return att
+      })
+    }
 
     const info = await transporter.sendMail(mailOptions)
 

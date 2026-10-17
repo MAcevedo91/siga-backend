@@ -12,7 +12,7 @@ const BLOQUEO_MINUTOS = 15
 const findUserByEmail = async (email) => {
   const { data, error } = await supabase
     .from('usuarios')
-    .select('id, tenant_id, email, password, nombre, apellido, rol, activo, intentos_fallidos, bloqueado_hasta')
+    .select('id, tenant_id, email, password, nombre, apellido, rol, avatar_url, activo, intentos_fallidos, bloqueado_hasta')
     .eq('email', email)
     .eq('activo', true)
     .single()
@@ -137,11 +137,12 @@ const login = async (email, password) => {
   return {
     token,
     user: {
-      id:       usuario.id,
-      nombre:   usuario.nombre,
-      apellido: usuario.apellido,
-      email:    usuario.email,
-      rol:      usuario.rol,
+      id:         usuario.id,
+      nombre:     usuario.nombre,
+      apellido:   usuario.apellido,
+      email:      usuario.email,
+      rol:        usuario.rol,
+      avatar_url: usuario.avatar_url || null,
     },
   }
 }
@@ -152,7 +153,7 @@ const login = async (email, password) => {
 const getMe = async (userId) => {
   const { data, error } = await supabase
     .from('usuarios')
-    .select('id, tenant_id, nombre, apellido, email, rol')
+    .select('id, tenant_id, nombre, apellido, email, rol, avatar_url')
     .eq('id', userId)
     .eq('activo', true)
     .single()

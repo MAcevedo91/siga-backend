@@ -3,10 +3,11 @@ const logger = require('../utils/logger')
 const {
   renderIncidenteGraveTemplate,
   renderProtocoloAbiertoTemplate,
-  renderProtocoloVencidoTemplate
+  renderProtocoloVencidoTemplate,
+  renderInformeOficialApoderadoTemplate
 } = require('../utils/emailTemplates')
 
-async function enviarEmail({ to, cc, bcc, subject, html, text }) {
+async function enviarEmail({ to, cc, bcc, subject, html, text, attachments }) {
   try {
     const job = await emailQueue.add('send-email', {
       to,
@@ -14,7 +15,8 @@ async function enviarEmail({ to, cc, bcc, subject, html, text }) {
       bcc,
       subject,
       html,
-      text
+      text,
+      attachments
     }, {
       attempts: 3,
       backoff: {
@@ -113,9 +115,73 @@ async function enviarEmailProtocoloVencido({
   })
 }
 
+
+/**
+ * Envía el informe oficial de convivencia escolar en PDF adjunto al apoderado titular.
+ *
+ * @param {Object} params
+ * @param {string} params.apoderadoEmail - Correo del apoderado.
+ * @param {string} params.apoderadoNombre - Nombre del apoderado.
+ * @param {string} params.estudianteNombre - Nombre completo del estudiante foco.
+ * @param {string} [params.colegioNombre] - Nombre del establecimiento escolar.
+ * @param {string} params.folio - Código correlativo de folio (ej. INF-2026-XXXX).
+ * @param {string} params.fechaIncidente - Fecha en que ocurrió el suceso.
+ * @param {string} params.fechaAprobacion - Fecha de aprobación formal.
+ * @param {Buffer|string} params.pdfBuffer - Buffer del PDF o string en Base64.
+ * @param {string} [params.filename] - Nombre del archivo adjunto.
+ */
+async function enviarEmailInformeOficialApoderado({
+  apoderadoEmail,
+  apoderadoNombre,
+  estudianteNombre,
+  colegioNombre = 'Escuela Coeducacional N° 1 El Salvador',
+  folio,
+  fechaIncidente,
+  fechaAprobacion,
+  pdfBuffer,
+  filename = 'Informe_Oficial_Convivencia_Escolar.pdf',
+}) {
+  const subject = `[SIGA Escolar] Informe Oficial de Convivencia Escolar — ${estudianteNombre}`
+
+  const html = renderInformeOficialApoderadoTemplate({
+    apoderadoNombre,
+    estudianteNombre,
+    colegioNombre,
+    folio,
+    fechaIncidente,
+    fechaAprobacion,
+  })
+
+  // Preparar adjunto seguro para serialización en cola Redis/Bull
+  let attachmentContent = pdfBuffer
+  let encoding = undefined
+
+  if (Buffer.isBuffer(pdfBuffer)) {
+    attachmentContent = pdfBuffer.toString('base64')
+    encoding = 'base64'
+  }
+
+  const attachments = [
+    {
+      filename,
+      content: attachmentContent,
+      contentType: 'application/pdf',
+      encoding,
+    },
+  ]
+
+  return enviarEmail({
+    to: apoderadoEmail,
+    subject,
+    html,
+    attachments,
+  })
+}
+
 module.exports = {
   enviarEmail,
   enviarEmailIncidenteGrave,
   enviarEmailProtocoloAbierto,
-  enviarEmailProtocoloVencido
+  enviarEmailProtocoloVencido,
+  enviarEmailInformeOficialApoderado,
 }

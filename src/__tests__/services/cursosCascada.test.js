@@ -244,4 +244,68 @@ describe('cursosService — Períodos Académicos y Búsqueda en Cascada (HU 5.5
       expect(result[1].es_pie).toBe(false)
     })
   })
+
+  describe('asignarProfesorJefe() con confirmación de contraseña', () => {
+    const bcrypt = require('bcrypt')
+
+    it('debe rechazar con 400 si no se ingresa la contraseña de autorización', async () => {
+      await expect(
+        cursosService.asignarProfesorJefe(mockTenantId, 'admin-1', 'curso-1', 'prof-1', '')
+      ).rejects.toThrow('La contraseña de autorización es requerida')
+    })
+
+    it('debe rechazar con 401 si la contraseña es incorrecta', async () => {
+      const mockEjecutorQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'admin-1', password: 'hashed-password', activo: true },
+          error: null,
+        }),
+      }
+
+      supabase.from = jest.fn().mockReturnValue(mockEjecutorQuery)
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false)
+
+      await expect(
+        cursosService.asignarProfesorJefe(mockTenantId, 'admin-1', 'curso-1', 'prof-1', 'wrong-pass')
+      ).rejects.toThrow('Contraseña de autorización incorrecta')
+    })
+
+    it('debe asignar exitosamente al profesor jefe cuando la contraseña es válida', async () => {
+      const mockEjecutor = { id: 'admin-1', password: 'hashed-password', activo: true }
+      const mockCurso = { id: 'curso-1', nombre: '5° Básico A' }
+      const mockDocente = { id: 'prof-1', nombre: 'Roberto', apellido: 'Sánchez', email: 'roberto@colegio.cl', avatar_url: null, activo: true }
+
+      const qEjecutor = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), single: jest.fn().mockResolvedValue({ data: mockEjecutor, error: null }) }
+      const qCurso = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), single: jest.fn().mockResolvedValue({ data: mockCurso, error: null }) }
+      const qDocente = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), single: jest.fn().mockResolvedValue({ data: mockDocente, error: null }) }
+      const qUpdate = { update: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis() }
+      qUpdate.eq.mockReturnValueOnce(qUpdate).mockResolvedValueOnce({ error: null })
+
+      supabase.from = jest.fn()
+        .mockReturnValueOnce(qEjecutor)
+        .mockReturnValueOnce(qCurso)
+        .mockReturnValueOnce(qDocente)
+        .mockReturnValueOnce(qUpdate)
+
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true)
+
+      const result = await cursosService.asignarProfesorJefe(
+        mockTenantId,
+        'admin-1',
+        'curso-1',
+        'prof-1',
+        'super-secret-password'
+      )
+
+      expect(result.curso_nombre).toBe('5° Básico A')
+      expect(result.profesor_jefe).toEqual({
+        id: 'prof-1',
+        nombre: 'Roberto Sánchez',
+        email: 'roberto@colegio.cl',
+        avatar_url: null,
+      })
+    })
+  })
 })

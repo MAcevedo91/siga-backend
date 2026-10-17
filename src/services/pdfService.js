@@ -354,7 +354,321 @@ async function generarPerfilEstudiante(estudiante, incidentes, riesgo) {
   })
 }
 
+
+/**
+ * Genera el PDF oficial del informe normativo de incidente (Circular N° 482).
+ * Formato A4 institucional de la Escuela Coeducacional N° 1 El Salvador con:
+ * - Membrete oficial y folio correlativo.
+ * - Ficha del estudiante foco y datos del incidente.
+ * - Las 5 secciones normativas estructuradas.
+ * - Glosa legal de confidencialidad y bloques para firma física.
+ *
+ * @param {Object} params
+ * @param {Object} params.reporte - Registro de reportes_incidentes (debe estar Aprobado).
+ * @param {Object} params.incidente - Datos del incidente y tipo de abordaje.
+ * @param {Object} params.estudiante - Datos del estudiante foco.
+ * @param {Object} [params.tenant] - Datos del colegio (nombre, rbd, direccion).
+ * @param {Object} [params.apoderado] - Datos del apoderado titular.
+ * @returns {Promise<Buffer>}
+ */
+const generarInformeOficialIncidentePDF = ({
+  reporte,
+  incidente,
+  estudiante,
+  tenant = {},
+  apoderado = null,
+}) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        margin: 50,
+        size: 'A4',
+        bufferPages: true,
+      })
+
+      const buffers = []
+      doc.on('data', chunk => buffers.push(chunk))
+      doc.on('end', () => resolve(Buffer.concat(buffers)))
+      doc.on('error', reject)
+
+      // Colores corporativos institucionales
+      const AZUL_OSCURO = '#1e3a5f'
+      const AZUL_ACENTO = '#2563eb'
+      const GRIS_TEXTO  = '#374151'
+      const GRIS_SUAVE  = '#6b7280'
+      const GRIS_FONDO  = '#f3f4f6'
+      const BORDE_LINEA = '#e5e7eb'
+
+      const pageWidth = doc.page.width - 100 // Margen 50 a cada lado
+
+      // Contenido oficial aprobado
+      const contenido = reporte.contenido_aprobado || reporte.contenido_editado || reporte.contenido_borrador || {}
+
+      // Formateo de fechas
+      const anio = new Date(reporte.fecha_aprobacion || reporte.created_at).getFullYear()
+      const correlativo = String(reporte.id || '').replace(/-/g, '').slice(0, 6).toUpperCase()
+      const folio = `INF-${anio}-${correlativo}`
+
+      const fechaAprobacion = reporte.fecha_aprobacion
+        ? new Date(reporte.fecha_aprobacion).toLocaleDateString('es-CL', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : 'Pendiente de aprobación'
+
+      const fechaIncidente = incidente.fecha
+        ? new Date(incidente.fecha).toLocaleDateString('es-CL', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+          })
+        : 'Fecha no registrada'
+
+      // =======================================================================
+      // 1. ENCABEZADO INSTITUCIONAL
+      // =======================================================================
+      doc
+        .rect(50, 45, pageWidth, 65)
+        .fill(AZUL_OSCURO)
+
+      doc
+        .fillColor('#ffffff')
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .text((tenant.nombre || 'ESCUELA COEDUCACIONAL N° 1 EL SALVADOR').toUpperCase(), 65, 55, {
+          width: pageWidth - 30,
+        })
+
+      doc
+        .fontSize(8.5)
+        .font('Helvetica')
+        .text('Sistema de Gestión y Acompañamiento Escolar — SIGA Escolar', 65, 74)
+        .text(`RBD: ${tenant.rbd || '00234-1'} | Dirección: ${tenant.direccion || 'Av. Potrerillos S/N, El Salvador'}`, 65, 87)
+
+      doc.y = 125
+
+      // =======================================================================
+      // 2. TÍTULO Y FOLIO DEL DOCUMENTO
+      // =======================================================================
+      doc
+        .fillColor(AZUL_OSCURO)
+        .fontSize(13)
+        .font('Helvetica-Bold')
+        .text('INFORME OFICIAL DE CONVIVENCIA ESCOLAR', { align: 'center' })
+
+      doc
+        .fillColor(GRIS_SUAVE)
+        .fontSize(8.5)
+        .font('Helvetica')
+        .text('ESTRUCTURADO CONFORME A LA CIRCULAR N° 482 — SUPERINTENDENCIA DE EDUCACIÓN', { align: 'center' })
+
+      doc.moveDown(0.4)
+
+      // Barra de folio y fecha
+      const yFolio = doc.y
+      doc
+        .rect(50, yFolio, pageWidth, 22)
+        .fill(GRIS_FONDO)
+
+      doc
+        .fillColor(AZUL_OSCURO)
+        .fontSize(8.5)
+        .font('Helvetica-Bold')
+        .text(`FOLIO: ${folio}`, 60, yFolio + 6)
+        .text(`VERSIÓN: ${reporte.version || 1}.0`, 220, yFolio + 6)
+        .text(`FECHA EMISIÓN: ${new Date().toLocaleDateString('es-CL')}`, 350, yFolio + 6, { align: 'right', width: pageWidth - 310 })
+
+      doc.y = yFolio + 32
+
+      // =======================================================================
+      // 3. FICHA DEL ESTUDIANTE Y DEL CASO
+      // =======================================================================
+      doc
+        .fillColor(AZUL_OSCURO)
+        .fontSize(10)
+        .font('Helvetica-Bold')
+        .text('1. ANTECEDENTES GENERALES Y FILIACIÓN')
+
+      doc
+        .moveDown(0.2)
+        .strokeColor(AZUL_ACENTO)
+        .lineWidth(1.5)
+        .moveTo(50, doc.y)
+        .lineTo(50 + pageWidth, doc.y)
+        .stroke()
+
+      doc.moveDown(0.5)
+
+      const nombreEstudiante = `${estudiante.nombre || ''} ${estudiante.apellido || ''}`.trim() || 'Estudiante'
+      const cursoEstudiante  = estudiante.cursos?.nombre || estudiante.curso || 'No asignado'
+      const rutEstudiante    = estudiante.rut || 'No registrado'
+      const esPie            = estudiante.es_pie ? 'Sí (Programa Integración Escolar)' : 'No'
+      const nombreApoderado  = apoderado ? `${apoderado.nombre} ${apoderado.apellido}` : 'No registrado'
+
+      const yFicha = doc.y
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRIS_TEXTO)
+      doc.text('Estudiante Foco:', 55, yFicha)
+      doc.font('Helvetica').text(nombreEstudiante, 145, yFicha)
+
+      doc.font('Helvetica-Bold').text('RUT:', 330, yFicha)
+      doc.font('Helvetica').text(rutEstudiante, 360, yFicha)
+
+      doc.font('Helvetica-Bold').text('Curso:', 55, yFicha + 15)
+      doc.font('Helvetica').text(cursoEstudiante, 145, yFicha + 15)
+
+      doc.font('Helvetica-Bold').text('Condición PIE:', 330, yFicha + 15)
+      doc.font('Helvetica').text(esPie, 410, yFicha + 15)
+
+      doc.font('Helvetica-Bold').text('Apoderado Titular:', 55, yFicha + 30)
+      doc.font('Helvetica').text(nombreApoderado, 145, yFicha + 30)
+
+      doc.font('Helvetica-Bold').text('Fecha Suceso:', 330, yFicha + 30)
+      doc.font('Helvetica').text(fechaIncidente, 410, yFicha + 30)
+
+      doc.font('Helvetica-Bold').text('Tipo Abordaje:', 55, yFicha + 45)
+      doc.font('Helvetica').text(incidente.tipo_abordaje || 'Convivencia Escolar', 145, yFicha + 45)
+
+      doc.font('Helvetica-Bold').text('Gravedad:', 330, yFicha + 45)
+      doc.font('Helvetica').text(incidente.gravedad || 'Leve', 410, yFicha + 45)
+
+      doc.y = yFicha + 65
+
+      // =======================================================================
+      // 4. LAS 5 SECCIONES NORMATIVAS (CIRCULAR N° 482)
+      // =======================================================================
+      const renderSeccion = (numRomano, titulo, texto) => {
+        // Verificar si queda poco espacio vertical para saltar de página ordenadamente
+        if (doc.y > 660) {
+          doc.addPage()
+        }
+
+        doc
+          .fillColor(AZUL_OSCURO)
+          .fontSize(9.5)
+          .font('Helvetica-Bold')
+          .text(`${numRomano}. ${titulo}`)
+
+        doc
+          .moveDown(0.2)
+          .strokeColor(BORDE_LINEA)
+          .lineWidth(0.8)
+          .moveTo(50, doc.y)
+          .lineTo(50 + pageWidth, doc.y)
+          .stroke()
+
+        doc.moveDown(0.4)
+
+        doc
+          .fillColor(GRIS_TEXTO)
+          .fontSize(8.5)
+          .font('Helvetica')
+          .text(texto || 'Sin registro detallado en esta sección.', 55, doc.y, {
+            width: pageWidth - 10,
+            align: 'justify',
+            lineGap: 2.5,
+          })
+
+        doc.moveDown(0.9)
+      }
+
+      renderSeccion('I', 'CONTEXTO Y CIRCUNSTANCIAS DEL SUCESO', contenido.contexto)
+      renderSeccion('II', 'RELATO DE HECHOS OBJETIVOS', contenido.hechos_objetivos)
+      renderSeccion('III', 'MEDIDAS FORMATIVAS Y PROTOCOLARES ADOPTADAS', contenido.medidas_adoptadas)
+      renderSeccion('IV', 'ACUERDOS Y COMPROMISOS ASUMIDOS', contenido.acuerdos_compromisos)
+      renderSeccion('V', 'PLAN DE SEGUIMIENTO PEDAGÓGICO Y PSICOSOCIAL', contenido.plan_seguimiento)
+
+      // =======================================================================
+      // 5. BLOQUE DE FIRMAS Y VALIDEZ LEGAL
+      // =======================================================================
+      if (doc.y > 640) {
+        doc.addPage()
+      }
+
+      doc.moveDown(1.5)
+
+      const yFirmas = doc.y + 20
+      const anchoFirma = 190
+
+      // Línea Firma 1 (Convivencia)
+      doc
+        .strokeColor(GRIS_SUAVE)
+        .lineWidth(0.8)
+        .moveTo(70, yFirmas)
+        .lineTo(70 + anchoFirma, yFirmas)
+        .stroke()
+
+      doc
+        .fillColor(GRIS_TEXTO)
+        .fontSize(8.5)
+        .font('Helvetica-Bold')
+        .text('COORDINACIÓN DE CONVIVENCIA ESCOLAR', 70, yFirmas + 5, {
+          width: anchoFirma,
+          align: 'center',
+        })
+      doc
+        .fontSize(7.5)
+        .font('Helvetica')
+        .text('Escuela Coeducacional N° 1 El Salvador', 70, yFirmas + 17, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
+      // Línea Firma 2 (Dirección / Inspectoría)
+      doc
+        .strokeColor(GRIS_SUAVE)
+        .lineWidth(0.8)
+        .moveTo(300, yFirmas)
+        .lineTo(300 + anchoFirma, yFirmas)
+        .stroke()
+
+      const aprobadorNombre = reporte.aprobador
+        ? `${reporte.aprobador.nombre} ${reporte.aprobador.apellido}`
+        : 'DIRECCIÓN / INSPECTORÍA GENERAL'
+
+      doc
+        .fillColor(GRIS_TEXTO)
+        .fontSize(8.5)
+        .font('Helvetica-Bold')
+        .text(aprobadorNombre.toUpperCase(), 300, yFirmas + 5, {
+          width: anchoFirma,
+          align: 'center',
+        })
+      doc
+        .fontSize(7.5)
+        .font('Helvetica')
+        .text(reporte.aprobador?.rol || 'Dirección del Establecimiento', 300, yFirmas + 17, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
+      // Glosa de pie de página institucional en todas las páginas
+      const range = doc.bufferedPageRange()
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i)
+        doc
+          .fillColor(GRIS_SUAVE)
+          .fontSize(7)
+          .font('Helvetica')
+          .text(
+            `Documento oficial e intransferible. Protegido por la Ley N° 19.628 de Protección de Datos Personales. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
+            50,
+            doc.page.height - 35,
+            { align: 'center', width: pageWidth }
+          )
+      }
+
+      doc.end()
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
 module.exports = {
   generarHistorialPDF,
-  generarPerfilEstudiante
+  generarPerfilEstudiante,
+  generarInformeOficialIncidentePDF,
 }

@@ -136,7 +136,7 @@ const listarEstudiantes = async (tenantId, filtros = {}) => {
 
   let query = supabase
     .from('estudiantes')
-    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, es_pie, direccion, activo, cursos ( id, nombre )')
+    .select('id, tenant_id, rut, nombre, apellido, curso_id, fecha_nacimiento, es_pie, direccion, activo, estado_matricula, cursos ( id, nombre )')
     .eq('tenant_id', tenantId)
     .order('apellido', { ascending: true })
 
@@ -173,7 +173,7 @@ const obtenerPerfil = async (id, tenantId) => {
     .from('estudiantes')
     .select(`
       id, tenant_id, rut, nombre, apellido,
-      fecha_nacimiento, activo, es_pie, direccion,
+      fecha_nacimiento, activo, estado_matricula, es_pie, direccion,
       cursos ( id, nombre, nivel, anio_academico )
     `)
     .eq('id', id)
@@ -207,6 +207,33 @@ const obtenerPerfil = async (id, tenantId) => {
     .eq('estudiante_id', id)
     .order('incidente_id', { ascending: false })
 
+  // Trayectoria académica / Historial de cursos por año lectivo (Pregunta 3)
+  let historialMatriculas = []
+  try {
+    const { data: matData } = await supabase
+      .from('matriculas')
+      .select(`
+        id, anio, estado_final, fecha_matricula,
+        cursos ( id, nombre, nivel, letra )
+      `)
+      .eq('estudiante_id', id)
+      .eq('tenant_id', tenantId)
+      .order('anio', { ascending: false })
+
+    if (matData) {
+      historialMatriculas = matData.map(m => ({
+        id: m.id,
+        anio: m.anio,
+        estado_final: m.estado_final,
+        curso_nombre: m.cursos?.nombre || 'Sin Curso',
+        nivel: m.cursos?.nivel || null,
+        letra: m.cursos?.letra || null,
+      }))
+    }
+  } catch (matErr) {
+    // Si la tabla no está creada aún en algún entorno de prueba, fallback silencioso
+  }
+
   // Aplanar estructura de incidentes
   const incidentes = (incidentesRaw || []).map(item => ({
     ...item.incidentes,
@@ -221,9 +248,11 @@ const obtenerPerfil = async (id, tenantId) => {
 
   return {
     ...estudiante,
+    estado_matricula: estudiante.estado_matricula || (estudiante.activo ? 'Regular' : 'Retirado'),
     apoderado: apoderadoTitular,
     apoderados: listaApoderados,
     incidentes,
+    trayectoria_escolar: historialMatriculas,
   }
 }
 

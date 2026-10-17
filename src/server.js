@@ -10,8 +10,6 @@ const logger     = require('./utils/logger')
 const { testConnection, supabase } = require('./utils/db')
 const { initSocketServer } = require('./sockets')
 const cron = require('node-cron')
-const alertaAusentismoQueue = require('./queues/alertaAusentismoQueue')
-const { procesarAlertaAusentismo } = require('./jobs/alertaAusentismoJob')
 const mensajeOfflineQueue = require('./queues/mensajeOfflineQueue')
 const { procesarMensajeOffline } = require('./jobs/mensajeOfflineJob')
 const { broadcastQueue, enviarBroadcast } = require('./services/broadcastsService')
@@ -23,11 +21,6 @@ if (process.env.ENABLE_EMAIL_WORKER !== 'false') {
   logger.info('Email worker enabled')
 }
 
-// Process alerta ausentismo queue
-alertaAusentismoQueue.process(async (job) => {
-  return await procesarAlertaAusentismo(job)
-})
-
 // Process mensaje offline queue
 mensajeOfflineQueue.process(async (job) => {
   return await procesarMensajeOffline(job)
@@ -37,35 +30,6 @@ mensajeOfflineQueue.process(async (job) => {
 broadcastQueue.process(async (job) => {
   const { broadcastId, tenantId } = job.data
   return await enviarBroadcast(broadcastId, tenantId)
-})
-
-// Schedule daily at 9 AM for all tenants
-cron.schedule('0 9 * * *', async () => {
-  logger.info('[Cron] Iniciando alerta de ausentismo diaria')
-
-  try {
-    // Get all tenants
-    const { data: tenants, error } = await supabase
-      .from('tenants')
-      .select('id')
-
-    if (error) {
-      logger.error('[Cron] Error obteniendo tenants:', error)
-      return
-    }
-
-    // Enqueue job for each tenant
-    for (const tenant of tenants) {
-      await alertaAusentismoQueue.add(
-        { tenantId: tenant.id },
-        { priority: 2 } // Priority: Alta
-      )
-    }
-
-    logger.info(`[Cron] ${tenants.length} jobs de alerta de ausentismo encolados`)
-  } catch (error) {
-    logger.error('[Cron] Error en cron de ausentismo:', error)
-  }
 })
 
 // Cron: chequear broadcasts programados cada minuto
@@ -103,7 +67,6 @@ const start = async () => {
     logger.info('SIGTERM received, closing servers gracefully')
     httpServer.close()
     socketHttpServer.close()
-    await alertaAusentismoQueue.close()
     await mensajeOfflineQueue.close()
     await broadcastQueue.close()
   })
