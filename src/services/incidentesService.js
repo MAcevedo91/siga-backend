@@ -279,8 +279,9 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
 
 /**
  * Cambia el estado de un incidente validando las transiciones permitidas.
+ * Opcionalmente permite registrar observaciones individuales por estudiante al derivar o cerrar.
  */
-const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
+const cambiarEstado = async (id, tenantId, nuevoEstado, userId, opciones = {}) => {
   // Get current state BEFORE update
   const { data: before, error: beforeError } = await supabase
     .from('incidentes')
@@ -317,6 +318,28 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
 
   if (error) throw error
 
+  // Actualizar observaciones individuales por estudiante si fueron suministradas (Hallazgo 5)
+  const observacionesEstudiantes = opciones?.observacionesEstudiantes
+  if (observacionesEstudiantes) {
+    const entries = Array.isArray(observacionesEstudiantes)
+      ? observacionesEstudiantes
+      : Object.entries(observacionesEstudiantes).map(([estudiante_id, observacion]) => ({
+          estudiante_id,
+          observacion,
+        }))
+
+    for (const item of entries) {
+      if (item?.estudiante_id && typeof item.observacion === 'string') {
+        const obsTrimmed = item.observacion.trim() || null
+        await supabase
+          .from('incidente_estudiantes')
+          .update({ observacion: obsTrimmed })
+          .eq('incidente_id', id)
+          .eq('estudiante_id', item.estudiante_id)
+      }
+    }
+  }
+
   // Register audit with diff
   if (userId) {
     await registrarAuditoria({
@@ -326,7 +349,11 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
       tabla: 'incidentes',
       registroId: id,
       datosBefore: before,
-      datosAfter: after
+      datosAfter: {
+        ...after,
+        justificacion: opciones?.justificacion || null,
+        observacionesEstudiantes: observacionesEstudiantes || null,
+      }
     }).catch(err => {
       logger.error('Error registering audit', {
         error: err.message,
@@ -339,6 +366,75 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, userId) => {
   await invalidateIncidentes(tenantId)
 
   return after
+}
+
+/**
+ * Actualiza la observación individual de derivación/seguimiento para un estudiante en un incidente (Hallazgo 5).
+ */
+const actualizarObservacionEstudiante = async (incidenteId, estudianteId, tenantId, observacion, userId) => {
+  // 1. Verificar existencia del incidente en el tenant
+  const { data: incidente, error: incError } = await supabase
+    .from('incidentes')
+    .select('id, estado')
+    .eq('id', incidenteId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (incError || !incidente) {
+    const err = new Error('Incidente no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 2. Verificar que el estudiante esté registrado en el incidente
+  const { data: vinculo, error: vincError } = await supabase
+    .from('incidente_estudiantes')
+    .select('incidente_id, estudiante_id, observacion, es_victima')
+    .eq('incidente_id', incidenteId)
+    .eq('estudiante_id', estudianteId)
+    .single()
+
+  if (vincError || !vinculo) {
+    const err = new Error('Estudiante no está registrado en este incidente')
+    err.statusCode = 404
+    throw err
+  }
+
+  const observacionLimpia = typeof observacion === 'string' ? observacion.trim() || null : null
+
+  // 3. Actualizar observación
+  const { data: updated, error: updateError } = await supabase
+    .from('incidente_estudiantes')
+    .update({ observacion: observacionLimpia })
+    .eq('incidente_id', incidenteId)
+    .eq('estudiante_id', estudianteId)
+    .select('incidente_id, estudiante_id, observacion, es_victima')
+    .single()
+
+  if (updateError) throw updateError
+
+  // 4. Auditoría de trazabilidad institucional
+  if (userId) {
+    await registrarAuditoria({
+      tenantId,
+      userId,
+      accion: 'UPDATE_OBSERVACION_ESTUDIANTE',
+      tabla: 'incidente_estudiantes',
+      registroId: `${incidenteId}_${estudianteId}`,
+      datosBefore: { observacion: vinculo.observacion },
+      datosAfter: { observacion: observacionLimpia }
+    }).catch(err => {
+      logger.error('Error registrando auditoría de observación estudiante', {
+        error: err.message,
+        incidenteId,
+        estudianteId
+      })
+    })
+  }
+
+  await invalidateIncidentes(tenantId)
+
+  return updated
 }
 
 /**
@@ -359,5 +455,6 @@ module.exports = {
   obtenerIncidente,
   crearIncidente,
   cambiarEstado,
+  actualizarObservacionEstudiante,
   listarTiposAbordaje,
 }

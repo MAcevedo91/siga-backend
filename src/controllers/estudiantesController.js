@@ -83,6 +83,27 @@ const actualizarHandler = async (req, res, next) => {
 }
 
 /**
+ * PUT /api/v1/estudiantes/:id/cambiar-curso
+ */
+const cambiarCursoHandler = async (req, res, next) => {
+  try {
+    const estudiante = await estudiantesService.cambiarCursoEstudiante(
+      req.params.id,
+      req.user.tenant_id,
+      req.body,
+      req.user.id || req.user.user_id
+    )
+    res.status(200).json({
+      status: 'success',
+      message: 'Curso reasignado exitosamente',
+      data: estudiante,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
  * POST /api/v1/estudiantes/importar
  * Acepta multipart/form-data con campo "archivo" (.csv o .xlsx)
  */
@@ -240,6 +261,7 @@ module.exports = {
   perfilHandler,
   crearHandler,
   actualizarHandler,
+  cambiarCursoHandler,
   importarHandler,
   pdfHandler,
   antecedentesEscaladaHandler,

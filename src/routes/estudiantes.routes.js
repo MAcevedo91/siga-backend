@@ -7,6 +7,7 @@ const {
   perfilHandler,
   crearHandler,
   actualizarHandler,
+  cambiarCursoHandler,
   importarHandler,
   pdfHandler,
   antecedentesEscaladaHandler,
@@ -85,6 +86,12 @@ router.post('/',
 router.put('/:id',
   requireRole('Administrador', 'Equipo de Formación'),
   actualizarHandler
+)
+
+// Reasignación de curso durante el año lectivo
+router.put('/:id/cambiar-curso',
+  requireRole('Administrador', 'Equipo de Formación'),
+  cambiarCursoHandler
 )
 
 // Importación masiva — solo Administrador y Coordinador

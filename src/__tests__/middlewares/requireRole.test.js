@@ -53,4 +53,36 @@ describe('requireRole Middleware', () => {
     expect(next).toHaveBeenCalled()
     expect(res.status).not.toHaveBeenCalled()
   })
+
+  it('should allow new Convivencia Escolar roles when Equipo de Formación is required', () => {
+    const rolesConvivencia = [
+      'Coordinador de Convivencia Escolar',
+      'Orientador',
+      'Psicólogo',
+      'Asistente Social',
+    ]
+
+    const middleware = requireRole('Administrador', 'Equipo de Formación')
+
+    rolesConvivencia.forEach((rol) => {
+      const req = { user: { rol } }
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() }
+      const next = jest.fn()
+
+      middleware(req, res, next)
+      expect(next).toHaveBeenCalled()
+      expect(res.status).not.toHaveBeenCalled()
+    })
+  })
+
+  it('should allow Directiva when Directivo is required and vice versa', () => {
+    const middleware = requireRole('Directivo')
+    const req = { user: { rol: 'Directiva' } }
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() }
+    const next = jest.fn()
+
+    middleware(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
+  })
 })

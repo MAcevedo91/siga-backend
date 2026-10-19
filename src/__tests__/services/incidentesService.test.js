@@ -347,6 +347,144 @@ describe('incidentesService', () => {
 
       await expect(incidentesService.cambiarEstado(1, mockTenantId, 'Cerrado')).rejects.toThrow('Transición de estado no permitida')
     })
+
+    it('should update individual student observations when transitioning to Derivado', async () => {
+      const mockIncidente = {
+        id: 1,
+        estado: 'En Investigación',
+      }
+
+      const mockUpdated = {
+        id: 1,
+        estado: 'Derivado',
+      }
+
+      const mockGetQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockIncidente, error: null })
+      }
+
+      const mockUpdateIncidenteQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockUpdated, error: null })
+      }
+
+      const mockUpdateEstudianteQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+      }
+
+      supabase.from = jest.fn()
+        .mockReturnValueOnce(mockGetQuery)
+        .mockReturnValueOnce(mockUpdateIncidenteQuery)
+        .mockReturnValueOnce(mockUpdateEstudianteQuery)
+
+      invalidateIncidentes.mockResolvedValue(true)
+
+      const result = await incidentesService.cambiarEstado(
+        1,
+        mockTenantId,
+        'Derivado',
+        mockUsuarioId,
+        {
+          justificacion: 'Se deriva a equipo psicosocial',
+          observacionesEstudiantes: [
+            { estudiante_id: 'est-1', observacion: 'Derivado a psicólogo por contención' }
+          ]
+        }
+      )
+
+      expect(result).toHaveProperty('estado', 'Derivado')
+      expect(supabase.from).toHaveBeenCalledWith('incidente_estudiantes')
+    })
+  })
+
+  describe('actualizarObservacionEstudiante', () => {
+    it('should successfully update individual student observation', async () => {
+      const mockIncidente = { id: 10, estado: 'Derivado' }
+      const mockVinculo = {
+        incidente_id: 10,
+        estudiante_id: 'est-uuid-1',
+        observacion: 'Observación previa',
+        es_victima: true
+      }
+      const mockUpdated = {
+        incidente_id: 10,
+        estudiante_id: 'est-uuid-1',
+        observacion: 'Nueva observación de apoyo socioemocional',
+        es_victima: true
+      }
+
+      const mockQueryIncidente = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockIncidente, error: null })
+      }
+
+      const mockQueryVinculo = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockVinculo, error: null })
+      }
+
+      const mockQueryUpdate = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockUpdated, error: null })
+      }
+
+      supabase.from = jest.fn()
+        .mockReturnValueOnce(mockQueryIncidente)
+        .mockReturnValueOnce(mockQueryVinculo)
+        .mockReturnValueOnce(mockQueryUpdate)
+
+      invalidateIncidentes.mockResolvedValue(true)
+
+      const result = await incidentesService.actualizarObservacionEstudiante(
+        10,
+        'est-uuid-1',
+        mockTenantId,
+        'Nueva observación de apoyo socioemocional',
+        mockUsuarioId
+      )
+
+      expect(result).toEqual(mockUpdated)
+      expect(invalidateIncidentes).toHaveBeenCalledWith(mockTenantId)
+    })
+
+    it('should throw 404 when student is not in incident', async () => {
+      const mockIncidente = { id: 10, estado: 'Derivado' }
+
+      const mockQueryIncidente = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: mockIncidente, error: null })
+      }
+
+      const mockQueryVinculo = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } })
+      }
+
+      supabase.from = jest.fn()
+        .mockReturnValueOnce(mockQueryIncidente)
+        .mockReturnValueOnce(mockQueryVinculo)
+
+      await expect(
+        incidentesService.actualizarObservacionEstudiante(
+          10,
+          'est-no-involucrado',
+          mockTenantId,
+          'Test',
+          mockUsuarioId
+        )
+      ).rejects.toThrow('Estudiante no está registrado en este incidente')
+    })
   })
 
   describe('listarTiposAbordaje', () => {

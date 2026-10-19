@@ -235,31 +235,26 @@ const generarHistorialPDF = (estudiante, incidentes) => {
 
     doc.moveDown(2)
 
-    const firmaY = doc.y
-    const col1   = 80
-    const col2   = 350
+    const firmaY = doc.y + 15
+    const anchoFirma = 240
+    const xFirma = 50 + (pageWidth - anchoFirma) / 2
 
-    // Líneas de firma
-    doc.rect(col1, firmaY, 150, 1).fill(NEGRO)
-    doc.rect(col2, firmaY, 150, 1).fill(NEGRO)
+    // Línea de firma única centrada (Encargado/a de Convivencia Escolar)
+    doc.rect(xFirma, firmaY, anchoFirma, 1).fill(NEGRO)
 
     doc.moveDown(0.4)
     doc
       .fillColor(NEGRO)
-      .fontSize(8)
+      .fontSize(8.5)
       .font('Helvetica-Bold')
-      .text('Coordinador/a de Convivencia Escolar', col1, doc.y, { width: 150, align: 'center' })
-
-    doc
-      .text('Director/a del Establecimiento', col2, doc.y - doc.currentLineHeight(), { width: 150, align: 'center' })
+      .text('ENCARGADO(A) DE CONVIVENCIA ESCOLAR', xFirma, doc.y, { width: anchoFirma, align: 'center' })
 
     doc.moveDown(0.3)
     doc
       .fillColor(GRIS)
       .font('Helvetica')
-      .fontSize(7)
-      .text('Nombre y firma', col1, doc.y, { width: 150, align: 'center' })
-      .text('Nombre y firma', col2, doc.y - doc.currentLineHeight(), { width: 150, align: 'center' })
+      .fontSize(7.5)
+      .text('Firma y Timbre Institucional', xFirma, doc.y, { width: anchoFirma, align: 'center' })
 
     // ==========================================================
     // PIE DE PÁGINA
@@ -377,6 +372,7 @@ const generarInformeOficialIncidentePDF = ({
   estudiante,
   tenant = {},
   apoderado = null,
+  preview = false,
 }) => {
   return new Promise((resolve, reject) => {
     try {
@@ -401,8 +397,68 @@ const generarInformeOficialIncidentePDF = ({
 
       const pageWidth = doc.page.width - 100 // Margen 50 a cada lado
 
-      // Contenido oficial aprobado
-      const contenido = reporte.contenido_aprobado || reporte.contenido_editado || reporte.contenido_borrador || {}
+      // Banner superior si es vista previa / validación
+      if (preview) {
+        doc
+          .rect(50, 24, pageWidth, 18)
+          .fill('#fef3c7')
+        doc
+          .fillColor('#92400e')
+          .fontSize(7.5)
+          .font('Helvetica-Bold')
+          .text('DOCUMENTO DE VALIDACIÓN / VISTA PREVIA (NO OFICIAL - PENDIENTE DE APROBACIÓN)', 50, 29, {
+            width: pageWidth,
+            align: 'center',
+          })
+      }
+
+      // Contenido oficial aprobado o borrador en revisión
+      const rawContenido = reporte.contenido_aprobado || reporte.contenido_editado || reporte.contenido_borrador || {}
+
+      // Sanitización preventiva de contrapartes (Ley N° 19.628 / Circular 482)
+      // Garantiza que en el PDF oficial individual de este estudiante NUNCA aparezcan nombres o RUTs de otros involucrados
+      const otrosEstudiantes = (incidente.estudiantes || incidente.incidente_estudiantes || [])
+        .map(e => e.estudiantes || e)
+        .filter(e => e && e.id && String(e.id) !== String(estudiante.id))
+
+      const sanitizarTextoContrapartes = (texto) => {
+        if (!texto || typeof texto !== 'string') return texto || ''
+        let res = texto
+        for (const otro of otrosEstudiantes) {
+          const nombreCompleto = `${otro.nombre || ''} ${otro.apellido || ''}`.trim()
+          if (nombreCompleto.length > 2) {
+            const re = new RegExp(`\\b${nombreCompleto.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'gi')
+            res = res.replace(re, 'otro estudiante involucrado')
+          }
+          if (otro.apellido && otro.apellido.trim().length > 2) {
+            const reAp = new RegExp(`\\b${otro.apellido.trim().replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'gi')
+            res = res.replace(reAp, 'otro estudiante involucrado')
+          }
+          if (otro.nombre && otro.nombre.trim().length > 2 && otro.nombre.trim().toLowerCase() !== estudiante.nombre?.trim().toLowerCase()) {
+            const reNom = new RegExp(`\\b${otro.nombre.trim().replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'gi')
+            res = res.replace(reNom, 'otro estudiante involucrado')
+          }
+          if (otro.rut && otro.rut.trim().length > 3) {
+            const rutLimpio = otro.rut.trim()
+            const reRut = new RegExp(rutLimpio.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'), 'gi')
+            res = res.replace(reRut, '[RUT_RESERVADO]')
+            const rutSinPuntos = rutLimpio.replace(/\./g, '')
+            if (rutSinPuntos !== rutLimpio) {
+              const reRut2 = new RegExp(rutSinPuntos.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'), 'gi')
+              res = res.replace(reRut2, '[RUT_RESERVADO]')
+            }
+          }
+        }
+        return res
+      }
+
+      const contenido = {
+        contexto: sanitizarTextoContrapartes(rawContenido.contexto),
+        hechos_objetivos: sanitizarTextoContrapartes(rawContenido.hechos_objetivos),
+        medidas_adoptadas: sanitizarTextoContrapartes(rawContenido.medidas_adoptadas),
+        acuerdos_compromisos: sanitizarTextoContrapartes(rawContenido.acuerdos_compromisos),
+        plan_seguimiento: sanitizarTextoContrapartes(rawContenido.plan_seguimiento),
+      }
 
       // Formateo de fechas
       const anio = new Date(reporte.fecha_aprobacion || reporte.created_at).getFullYear()
@@ -590,56 +646,44 @@ const generarInformeOficialIncidentePDF = ({
       doc.moveDown(1.5)
 
       const yFirmas = doc.y + 20
-      const anchoFirma = 190
+      const anchoFirma = 240
+      const xFirma = 50 + (pageWidth - anchoFirma) / 2
 
-      // Línea Firma 1 (Convivencia)
+      // Línea de firma única centrada (Encargado/a de Convivencia Escolar)
       doc
         .strokeColor(GRIS_SUAVE)
         .lineWidth(0.8)
-        .moveTo(70, yFirmas)
-        .lineTo(70 + anchoFirma, yFirmas)
+        .moveTo(xFirma, yFirmas)
+        .lineTo(xFirma + anchoFirma, yFirmas)
         .stroke()
 
+      const firmanteNombre = preview
+        ? 'DOCUMENTO EN REVISIÓN (PENDIENTE DE APROBACIÓN)'
+        : (reporte.aprobador
+            ? `${reporte.aprobador.nombre} ${reporte.aprobador.apellido}`
+            : 'ENCARGADO(A) DE CONVIVENCIA ESCOLAR')
+
       doc
-        .fillColor(GRIS_TEXTO)
+        .fillColor(preview ? '#b45309' : GRIS_TEXTO)
         .fontSize(8.5)
         .font('Helvetica-Bold')
-        .text('COORDINACIÓN DE CONVIVENCIA ESCOLAR', 70, yFirmas + 5, {
+        .text(firmanteNombre.toUpperCase(), xFirma, yFirmas + 5, {
           width: anchoFirma,
           align: 'center',
         })
+
+      doc
+        .fontSize(8)
+        .font('Helvetica-Bold')
+        .text(preview ? 'VALIDACIÓN PREVIA - CONVIVENCIA ESCOLAR' : 'ENCARGADO(A) DE CONVIVENCIA ESCOLAR', xFirma, yFirmas + 17, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
       doc
         .fontSize(7.5)
         .font('Helvetica')
-        .text('Escuela Coeducacional N° 1 El Salvador', 70, yFirmas + 17, {
-          width: anchoFirma,
-          align: 'center',
-        })
-
-      // Línea Firma 2 (Dirección / Inspectoría)
-      doc
-        .strokeColor(GRIS_SUAVE)
-        .lineWidth(0.8)
-        .moveTo(300, yFirmas)
-        .lineTo(300 + anchoFirma, yFirmas)
-        .stroke()
-
-      const aprobadorNombre = reporte.aprobador
-        ? `${reporte.aprobador.nombre} ${reporte.aprobador.apellido}`
-        : 'DIRECCIÓN / INSPECTORÍA GENERAL'
-
-      doc
-        .fillColor(GRIS_TEXTO)
-        .fontSize(8.5)
-        .font('Helvetica-Bold')
-        .text(aprobadorNombre.toUpperCase(), 300, yFirmas + 5, {
-          width: anchoFirma,
-          align: 'center',
-        })
-      doc
-        .fontSize(7.5)
-        .font('Helvetica')
-        .text(reporte.aprobador?.rol || 'Dirección del Establecimiento', 300, yFirmas + 17, {
+        .text(tenant.nombre || 'Escuela Coeducacional N° 1 El Salvador', xFirma, yFirmas + 29, {
           width: anchoFirma,
           align: 'center',
         })
@@ -649,11 +693,13 @@ const generarInformeOficialIncidentePDF = ({
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i)
         doc
-          .fillColor(GRIS_SUAVE)
+          .fillColor(preview ? '#b45309' : GRIS_SUAVE)
           .fontSize(7)
           .font('Helvetica')
           .text(
-            `Documento oficial e intransferible. Protegido por la Ley N° 19.628 de Protección de Datos Personales. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
+            preview
+              ? `VISTA PREVIA PARA REVISIÓN Y VALIDACIÓN INTERNA • Documento no oficial pendiente de aprobación formal • Página ${i + 1} de ${range.count}`
+              : `Documento oficial e intransferible. Protegido por la Ley N° 19.628 de Protección de Datos Personales. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
             50,
             doc.page.height - 35,
             { align: 'center', width: pageWidth }

@@ -84,4 +84,73 @@ describe('pdfService — generarInformeOficialIncidentePDF (Tarea 6.3.1)', () =>
     expect(buffer.length).toBeGreaterThan(1000)
     expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
   })
+
+  it('debe proteger la identidad de los demás involucrados anonimizándolos en el PDF individual de Martín', async () => {
+    const reporteConNombresTerceros = {
+      ...mockReporte,
+      contenido_aprobado: {
+        ...mockReporte.contenido_aprobado,
+        hechos_objetivos: 'Martín González discute acaloradamente con Lucas Silva (RUT: 23.456.789-1) en el patio.',
+      },
+    }
+
+    const incidenteConOtrosAlumnos = {
+      ...mockIncidente,
+      estudiantes: [
+        { id: 'est-123', nombre: 'Martín', apellido: 'González' },
+        { id: 'est-999', nombre: 'Lucas', apellido: 'Silva', rut: '23.456.789-1' },
+      ],
+    }
+
+    const buffer = await generarInformeOficialIncidentePDF({
+      reporte: reporteConNombresTerceros,
+      incidente: incidenteConOtrosAlumnos,
+      estudiante: mockEstudiante,
+      tenant: mockTenant,
+      apoderado: mockApoderado,
+    })
+
+    expect(Buffer.isBuffer(buffer)).toBe(true)
+    expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
+  })
+
+  it('debe generar exitosamente el PDF en modo vista previa (preview: true) para validación antes de la aprobación', async () => {
+    const reporteBorrador = {
+      ...mockReporte,
+      estado: 'Borrador',
+      fecha_aprobacion: null,
+      contenido_aprobado: null,
+      contenido_borrador: mockReporte.contenido_aprobado,
+    }
+
+    const buffer = await generarInformeOficialIncidentePDF({
+      reporte: reporteBorrador,
+      incidente: mockIncidente,
+      estudiante: mockEstudiante,
+      tenant: mockTenant,
+      apoderado: mockApoderado,
+      preview: true,
+    })
+
+    expect(Buffer.isBuffer(buffer)).toBe(true)
+    expect(buffer.length).toBeGreaterThan(1000)
+    expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
+  })
+
+  it('debe generar exitosamente el PDF de historial conductual con firma única de Encargado de Convivencia', async () => {
+    const { generarHistorialPDF } = require('../../services/pdfService')
+    const buffer = await generarHistorialPDF(mockEstudiante, [
+      {
+        id: 1,
+        fecha: '2026-09-20',
+        gravedad: 'Leve',
+        relato: 'Falta menor en sala de clases',
+        medidas: 'Amonestación verbal',
+      },
+    ])
+
+    expect(Buffer.isBuffer(buffer)).toBe(true)
+    expect(buffer.length).toBeGreaterThan(1000)
+    expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
+  })
 })

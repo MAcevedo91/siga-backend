@@ -54,6 +54,12 @@ const actualizarEstudianteSchema = z.object({
   apoderado: apoderadoSchema,
 })
 
+const cambiarCursoSchema = z.object({
+  curso_id: z.coerce.number().int().positive('ID de curso inválido'),
+  motivo: z.string().min(3, 'El motivo de reasignación debe tener al menos 3 caracteres').max(200, 'El motivo no puede exceder 200 caracteres'),
+  observacion: z.string().max(1000, 'La observación no puede exceder 1000 caracteres').optional().nullable(),
+})
+
 const formatearErrorZod = (error) => {
   const issues = error.issues || error.errors || []
   if (issues.length > 0) {
@@ -424,6 +430,109 @@ const actualizarEstudiante = async (id, tenantId, datos) => {
   return data
 }
 
+/**
+ * Reasigna o cambia a un estudiante de curso durante el año lectivo.
+ * Verifica multi-tenant, actualiza curso_id, sincroniza matricula activa e invalida caché.
+ */
+const cambiarCursoEstudiante = async (id, tenantId, datos, usuarioId) => {
+  const resultado = cambiarCursoSchema.safeParse(datos)
+  if (!resultado.success) {
+    const err = new Error(formatearErrorZod(resultado.error))
+    err.statusCode = 400
+    throw err
+  }
+
+  const { curso_id: nuevoCursoId, motivo, observacion } = resultado.data
+
+  // 1. Verificar que el estudiante existe y pertenece al tenant
+  const { data: estudiante, error: errEst } = await supabase
+    .from('estudiantes')
+    .select('id, nombre, apellido, rut, curso_id, tenant_id')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (errEst || !estudiante) {
+    const err = new Error('Estudiante no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 2. Verificar que el nuevo curso existe y pertenece al mismo tenant
+  const { data: cursoDestino, error: errCurso } = await supabase
+    .from('cursos')
+    .select('id, nombre, nivel, letra, anio_academico')
+    .eq('id', nuevoCursoId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (errCurso || !cursoDestino) {
+    const err = new Error('El curso de destino no existe o no pertenece a este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  const cursoAnteriorId = estudiante.curso_id
+
+  // 3. Actualizar curso_id en tabla estudiantes
+  const { data: estudianteActualizado, error: errUpd } = await supabase
+    .from('estudiantes')
+    .update({ curso_id: nuevoCursoId })
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select('id, rut, nombre, apellido, curso_id, es_pie, activo, cursos ( id, nombre, nivel, letra )')
+    .single()
+
+  if (errUpd || !estudianteActualizado) {
+    throw new Error('Error al actualizar el curso del estudiante')
+  }
+
+  // 4. Sincronizar / registrar en tabla matriculas si existe
+  const anioActual = cursoDestino.anio_academico || new Date().getFullYear()
+  try {
+    const { data: matriculaExistente } = await supabase
+      .from('matriculas')
+      .select('id')
+      .eq('estudiante_id', id)
+      .eq('tenant_id', tenantId)
+      .eq('anio', anioActual)
+      .limit(1)
+
+    if (matriculaExistente && matriculaExistente.length > 0) {
+      await supabase
+        .from('matriculas')
+        .update({
+          curso_id: nuevoCursoId,
+        })
+        .eq('id', matriculaExistente[0].id)
+    } else {
+      await supabase
+        .from('matriculas')
+        .insert({
+          tenant_id: tenantId,
+          estudiante_id: id,
+          curso_id: nuevoCursoId,
+          anio: anioActual,
+          estado_final: 'Regular',
+        })
+    }
+  } catch (matErr) {
+    // Si la tabla no está disponible o falla en entorno de pruebas, continuar
+    console.warn('[CAMBIAR_CURSO] Advertencia al sincronizar matricula:', matErr?.message)
+  }
+
+  // 5. Invalidar caché en Redis
+  await invalidateEstudiantes(tenantId)
+
+  return {
+    ...estudianteActualizado,
+    curso: estudianteActualizado.cursos,
+    curso_anterior_id: cursoAnteriorId,
+    motivo_cambio: motivo,
+    observacion_cambio: observacion || null,
+  }
+}
+
 // =============================================================================
 // IMPORTACIÓN MASIVA
 // =============================================================================
@@ -651,5 +760,6 @@ module.exports = {
   obtenerPerfil,
   crearEstudiante,
   actualizarEstudiante,
+  cambiarCursoEstudiante,
   importarEstudiantes,
 }

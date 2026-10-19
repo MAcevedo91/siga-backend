@@ -64,7 +64,7 @@ const crearHandler = async (req, res, next) => {
  */
 const cambiarEstadoHandler = async (req, res, next) => {
   try {
-    const { estado } = req.body
+    const { estado, justificacion, observacionesEstudiantes } = req.body
 
     if (!estado) {
       return res.status(400).json({
@@ -78,13 +78,40 @@ const cambiarEstadoHandler = async (req, res, next) => {
       req.params.id,
       req.user.tenant_id,
       estado,
-      req.user.user_id
+      req.user.user_id,
+      { justificacion, observacionesEstudiantes }
     )
 
     res.status(200).json({
       status: 'success',
       message: `Estado actualizado a "${estado}"`,
       data: incidente,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * PATCH /api/v1/incidentes/:id/estudiantes/:estudianteId/observacion (Hallazgo 5)
+ */
+const actualizarObservacionEstudianteHandler = async (req, res, next) => {
+  try {
+    const { id, estudianteId } = req.params
+    const { observacion } = req.body
+
+    const resultado = await incidentesService.actualizarObservacionEstudiante(
+      id,
+      estudianteId,
+      req.user.tenant_id,
+      observacion,
+      req.user.user_id
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Observación individual de estudiante actualizada correctamente',
+      data: resultado,
     })
   } catch (err) {
     next(err)
@@ -112,5 +139,6 @@ module.exports = {
   obtenerHandler,
   crearHandler,
   cambiarEstadoHandler,
+  actualizarObservacionEstudianteHandler,
   tiposAbordajeHandler,
 }

@@ -5,6 +5,7 @@ const {
   obtenerHandler,
   crearHandler,
   cambiarEstadoHandler,
+  actualizarObservacionEstudianteHandler,
   tiposAbordajeHandler,
 } = require('../controllers/incidentesController')
 
@@ -38,6 +39,12 @@ router.patch('/:id/estado',
   cambiarEstadoHandler
 )
 
+// Observación individual de estudiante al derivar o en seguimiento (Hallazgo 5)
+router.patch('/:id/estudiantes/:estudianteId/observacion',
+  requireRole('Administrador', 'Equipo de Formación'),
+  actualizarObservacionEstudianteHandler
+)
+
 
 // =============================================================================
 // REPORTES NORMATIVOS CON ASISTENCIA IA (SPRINT 6 - HU 6.1)
@@ -63,10 +70,10 @@ router.patch(
   editarBorradorHandler
 )
 
-// Aprobación y oficialización formal (exclusivo jefatura: Director/a y Convivencia)
+// Aprobación y oficialización formal (exclusivo jefatura: Director/a y Coordinador de Convivencia)
 router.post(
   '/:id/reportes/:reporteId/aprobar',
-  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  requireRole('Administrador', 'Directiva', 'Directivo', 'Coordinador de Convivencia Escolar', 'Equipo de Formación'),
   aprobarReporteHandler
 )
 

@@ -1,7 +1,18 @@
 const bcrypt = require('bcrypt')
 const { supabase } = require('../utils/db')
 
-const ROLES_VALIDOS = ['Administrador', 'Directivo', 'Inspector', 'Docente', 'Equipo de Formación']
+const ROLES_VALIDOS = [
+  'Administrador',
+  'Directiva',
+  'Directivo',
+  'Coordinador de Convivencia Escolar',
+  'Orientador',
+  'Psicólogo',
+  'Asistente Social',
+  'Inspector',
+  'Docente',
+  'Equipo de Formación',
+]
 
 /**
  * Campos seguros a retornar — nunca incluir password

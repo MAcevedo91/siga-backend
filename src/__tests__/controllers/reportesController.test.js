@@ -358,6 +358,34 @@ describe('reportesController & Rutas Incidentes (Tarea 6.1.3)', () => {
       expect(res.status).toBe(400)
       expect(res.body.message).toMatch(/no corresponde al incidente/)
     })
+
+    it('debe permitir la descarga en 200 si el reporte está en Borrador pero se solicita con ?preview=true para validación', async () => {
+      const mockReporteBorrador = {
+        id: mockReporteId,
+        incidente_id: mockIncidenteId,
+        estudiante_id: 'est-123',
+        estado: 'Borrador',
+        contenido_borrador: { contexto: 'Texto en borrador' },
+        estudiantes: { nombre: 'Martín', apellido: 'González' },
+      }
+
+      reportesService.obtenerReportePorId.mockResolvedValue(mockReporteBorrador)
+      const fakePdfBuffer = Buffer.from('%PDF-1.4 Mock Preview Stream')
+      pdfService.generarInformeOficialIncidentePDF.mockResolvedValue(fakePdfBuffer)
+
+      const res = await request(app)
+        .get(`/api/v1/incidentes/${mockIncidenteId}/reportes/${mockReporteId}/pdf?preview=true`)
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/application\/pdf/)
+      expect(res.headers['content-disposition']).toMatch(/inline; filename=/)
+      expect(res.body).toEqual(fakePdfBuffer)
+      expect(pdfService.generarInformeOficialIncidentePDF).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preview: true,
+        })
+      )
+    })
   })
 
 })

@@ -165,11 +165,12 @@ const descargarReportePdfHandler = async (req, res, next) => {
       })
     }
 
-    // 2. Control de inmutabilidad: Solo descargable si está Aprobado
-    if (reporte.estado !== 'Aprobado') {
+    // 2. Control de inmutabilidad: Solo descargable definitivo si está Aprobado (salvo en modo vista previa de validación)
+    const esPreview = req.query.preview === 'true'
+    if (reporte.estado !== 'Aprobado' && !esPreview) {
       return res.status(400).json({
         status: 'error',
-        message: 'Debe aprobar el reporte antes de emitir el PDF oficial',
+        message: 'Debe aprobar el reporte antes de emitir el PDF oficial definitivo',
         statusCode: 400,
       })
     }
@@ -199,13 +200,32 @@ const descargarReportePdfHandler = async (req, res, next) => {
       .eq('es_titular', true)
       .maybeSingle()
 
-    // 6. Generar Buffer del PDF oficial con PDFKit
+    // 6. Consultar TODOS los estudiantes involucrados en el incidente para garantizar la sanitización DLP de contrapartes
+    const { data: todosInvolucrados } = await supabase
+      .from('incidente_estudiantes')
+      .select(`
+        estudiante_id, es_victima, observacion,
+        estudiantes:estudiante_id ( id, rut, nombre, apellido )
+      `)
+      .eq('incidente_id', incidenteId)
+
+    const involucradosList = (todosInvolucrados || []).map((i) => ({
+      ...(i.estudiantes || {}),
+      id: i.estudiante_id,
+      es_victima: i.es_victima,
+    }))
+
+    // 7. Generar Buffer del PDF oficial o de validación con PDFKit
     const estudianteCompleto = {
       ...(reporte.estudiantes || {}),
       ...(estudianteData || {}),
     }
 
-    const incidenteCompleto = reporte.incidentes || { id: incidenteId }
+    const incidenteCompleto = {
+      ...(reporte.incidentes || { id: incidenteId }),
+      estudiantes: involucradosList,
+      incidente_estudiantes: involucradosList,
+    }
 
     const pdfBuffer = await pdfService.generarInformeOficialIncidentePDF({
       reporte,
@@ -213,11 +233,13 @@ const descargarReportePdfHandler = async (req, res, next) => {
       estudiante: estudianteCompleto,
       tenant: tenant || {},
       apoderado,
+      preview: esPreview,
     })
 
-    // 7. Enviar PDF con cabeceras de visualización y descarga
+    // 8. Enviar PDF con cabeceras de visualización y descarga
     const apellidoEst = (estudianteCompleto.apellido || 'Alumno').replace(/\s+/g, '_')
-    const filename = `Informe_Incidente_${incidenteId.slice(0, 8)}_${apellidoEst}.pdf`
+    const prefix = esPreview ? 'Validacion_Borrador' : 'Informe_Incidente'
+    const filename = `${prefix}_${incidenteId.slice(0, 8)}_${apellidoEst}.pdf`
 
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
