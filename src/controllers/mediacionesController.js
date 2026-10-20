@@ -1,4 +1,5 @@
 const mediacionesService = require('../services/mediacionesService')
+const pdfMediacionService = require('../services/pdfMediacionService')
 const logger = require('../utils/logger')
 
 /**
@@ -142,6 +143,31 @@ const listarCompromisosHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/mediaciones/:id/acta-pdf
+ * Genera y descarga el Acta Oficial de Mediación Escolar en formato PDF con hash SHA-256.
+ */
+const descargarActaPdfHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const mediacion = await mediacionesService.obtenerMediacionPorId(tenantId, id)
+    const pdfBuffer = await pdfMediacionService.generarActaMediacionPDF(mediacion)
+
+    const folioSeguro = (mediacion.folio || 'S-F').replace(/[^a-zA-Z0-9_-]/g, '_')
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="Acta_Mediacion_${folioSeguro}.pdf"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+
+    res.status(200).send(pdfBuffer)
+  } catch (err) {
+    logger.error('Error en descargarActaPdfHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
@@ -149,4 +175,5 @@ module.exports = {
   notificarApoderadosHandler,
   guardarCompromisosHandler,
   listarCompromisosHandler,
+  descargarActaPdfHandler,
 }

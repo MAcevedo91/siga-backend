@@ -7,6 +7,7 @@ const {
   notificarApoderadosHandler,
   guardarCompromisosHandler,
   listarCompromisosHandler,
+  descargarActaPdfHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -28,6 +29,13 @@ router.get(
   '/:id',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
   obtenerHandler
+)
+
+// Generar y descargar Acta Oficial de Mediación Escolar en PDF (TASK 7.2.3.1)
+router.get(
+  '/:id/acta-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  descargarActaPdfHandler
 )
 
 // Registrar nueva mediación con participantes
