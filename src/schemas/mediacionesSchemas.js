@@ -131,13 +131,90 @@ const notificarApoderadosSchema = z.object({
     .optional(),
 })
 
+// =============================================================================
+// ENUMS Y ESQUEMAS: COMPROMISOS Y ACUERDOS FORMATIVOS (TASK 7.2.2.1)
+// =============================================================================
+
+const TIPOS_COMPROMISO = [
+  'reparacion_relacional',
+  'disculpa_comunitaria',
+  'cuidado_espacios',
+  'actitud_aula',
+  'apoyo_academico',
+  'otro',
+]
+
+const compromisoItemSchema = z.object({
+  id: z.string().uuid('id del compromiso debe ser UUID válido').optional().nullable(),
+  estudiante_id: z.string().uuid('estudiante_id debe ser UUID válido').optional().nullable(),
+  tipo_compromiso: z.enum(TIPOS_COMPROMISO, {
+    message: `Tipo de compromiso inválido. Opciones: ${TIPOS_COMPROMISO.join(', ')}`,
+  }),
+  descripcion: z
+    .string({ required_error: 'La descripción del compromiso es requerida' })
+    .min(5, 'La descripción del compromiso debe tener al menos 5 caracteres')
+    .max(1000, 'La descripción no puede superar los 1000 caracteres'),
+  fecha_limite: z
+    .string({ required_error: 'La fecha límite es requerida' })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha_limite debe tener formato YYYY-MM-DD'),
+  cumplido: z.boolean().optional().default(false),
+  fecha_cumplimiento: z.string().optional().nullable(),
+  observaciones_seguimiento: z.string().max(1000).optional().nullable(),
+})
+
+const guardarCompromisosBaseSchema = z.object({
+  compromisos: z
+    .array(compromisoItemSchema, {
+      required_error: 'Debe incluir al menos un compromiso',
+    })
+    .min(1, 'Debe incluir al menos un compromiso'),
+  fecha_seguimiento: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha_seguimiento debe tener formato YYYY-MM-DD')
+    .optional()
+    .nullable(),
+  observaciones_cierre: z.string().max(2000).optional().nullable(),
+  estado: z.enum(ESTADOS_MEDIACION).optional(),
+})
+
+/**
+ * Genera un validador Zod contextualizado con la fecha de la mediación.
+ * Garantiza el Criterio de Aceptación: fecha_limite no puede ser anterior a la fecha de la mediación.
+ *
+ * @param {string|Date} [fechaMediacion] - Fecha programada de la mediación
+ * @returns {z.ZodTypeAny}
+ */
+const crearGuardarCompromisosSchema = (fechaMediacion) => {
+  return guardarCompromisosBaseSchema.superRefine((data, ctx) => {
+    if (fechaMediacion) {
+      const fechaRef = typeof fechaMediacion === 'string'
+        ? fechaMediacion.split('T')[0]
+        : new Date(fechaMediacion).toISOString().split('T')[0]
+
+      data.compromisos.forEach((comp, idx) => {
+        if (comp.fecha_limite && comp.fecha_limite < fechaRef) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `La fecha límite (${comp.fecha_limite}) no puede ser anterior a la fecha de la mediación (${fechaRef})`,
+            path: ['compromisos', idx, 'fecha_limite'],
+          })
+        }
+      })
+    }
+  })
+}
+
 module.exports = {
   TIPOS_ORIGEN,
   ESTADOS_MEDIACION,
   ROLES_PARTICIPANTE,
   MEDIOS_AVISO,
+  TIPOS_COMPROMISO,
   participanteSchema,
   crearMediacionSchema,
   filtrosMediacionesSchema,
   notificarApoderadosSchema,
+  compromisoItemSchema,
+  guardarCompromisosBaseSchema,
+  crearGuardarCompromisosSchema,
 }

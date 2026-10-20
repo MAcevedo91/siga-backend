@@ -92,9 +92,61 @@ const notificarApoderadosHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * PUT /api/v1/mediaciones/:id/compromisos
+ * Guarda de forma atómica los compromisos y acuerdos formativos de la mediación.
+ */
+const guardarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.guardarCompromisos(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Compromisos de mediación registrados y actualizados exitosamente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en guardarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/compromisos
+ * Retorna todos los compromisos formativos vigentes de la mediación.
+ */
+const listarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const data = await mediacionesService.listarCompromisos(tenantId, id)
+
+    res.status(200).json({
+      status: 'success',
+      total: data.length,
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en listarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
   obtenerHandler,
   notificarApoderadosHandler,
+  guardarCompromisosHandler,
+  listarCompromisosHandler,
 }

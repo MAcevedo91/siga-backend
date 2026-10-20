@@ -5,6 +5,8 @@ const {
   listarHandler,
   obtenerHandler,
   notificarApoderadosHandler,
+  guardarCompromisosHandler,
+  listarCompromisosHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -21,7 +23,7 @@ router.get(
   listarHandler
 )
 
-// Obtener expediente detallado de una mediación por ID
+// Obtener expediente detallado de una mediación por ID (incluye participantes y compromisos)
 router.get(
   '/:id',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
@@ -40,6 +42,20 @@ router.post(
   '/:id/notificar-apoderados',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
   notificarApoderadosHandler
+)
+
+// Listar compromisos y acuerdos formativos vigentes de una mediación (TASK 7.2.2.1)
+router.get(
+  '/:id/compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  listarCompromisosHandler
+)
+
+// Guardar y actualizar atómicamente acuerdos y compromisos formativos (TASK 7.2.2.1)
+router.put(
+  '/:id/compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  guardarCompromisosHandler
 )
 
 module.exports = router
