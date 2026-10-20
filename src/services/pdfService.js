@@ -667,8 +667,307 @@ const generarInformeOficialIncidentePDF = ({
   })
 }
 
+/**
+ * Genera el Expediente Oficial del Protocolo RICE en PDF con detalle de pasos
+ * y el Anexo de Evidencias Probatorias para auditorías de la Superintendencia de Educación.
+ *
+ * @param {Object} protocolo - Datos del protocolo con estudiante, apoderados, tipo
+ * @param {Array} pasos - Lista de pasos normativos con evidencias adjuntas
+ * @returns {Promise<Buffer>}
+ */
+const generarExpedienteProtocoloPDF = (protocolo, pasos = []) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' })
+      const buffers = []
+
+      doc.on('data', (chunk) => buffers.push(chunk))
+      doc.on('end', () => resolve(Buffer.concat(buffers)))
+      doc.on('error', reject)
+
+      const AZUL = '#1e3a5f'
+      const AZUL_CLARO = '#2563eb'
+      const GRIS_FONDO = '#f8fafc'
+      const GRIS_BORDE = '#e2e8f0'
+      const GRIS_TEXTO = '#334155'
+      const GRIS_SUAVE = '#64748b'
+      const VERDE = '#15803d'
+      const AMBAR = '#b45309'
+      const pageWidth = doc.page.width - 100
+
+      // ==========================================================
+      // ENCABEZADO — Membrete Institucional
+      // ==========================================================
+      doc.rect(50, 45, pageWidth, 68).fill(AZUL)
+
+      doc
+        .fillColor('white')
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .text('ESCUELA COEDUCACIONAL N°1 EL SALVADOR', 60, 58, { width: pageWidth - 20 })
+
+      doc
+        .fontSize(8.5)
+        .font('Helvetica')
+        .text('Sistema de Gestión y Acompañamiento Escolar — SIGA Escolar', 60, 77)
+
+      const fechaEmision = new Date().toLocaleDateString('es-CL', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+
+      doc
+        .fontSize(7.5)
+        .text(`Fecha y hora de emisión: ${fechaEmision} | Folio: ${protocolo.id ? String(protocolo.id).substring(0, 8).toUpperCase() : 'N/A'}`, 60, 91)
+
+      doc.y = 125
+
+      // ==========================================================
+      // TÍTULO DEL EXPEDIENTE
+      // ==========================================================
+      doc
+        .fillColor(AZUL)
+        .fontSize(13)
+        .font('Helvetica-Bold')
+        .text('EXPEDIENTE OFICIAL DE PROTOCOLO RICE', { align: 'center' })
+
+      doc
+        .fontSize(8.5)
+        .font('Helvetica')
+        .fillColor(GRIS_SUAVE)
+        .text('Superintendencia de Educación — Circular N° 482 / Debido Proceso y Medidas de Protección', { align: 'center' })
+
+      doc.moveDown(0.4)
+      doc.fillColor(AZUL_CLARO).rect(50, doc.y, pageWidth, 2).fill()
+      doc.moveDown(0.8)
+
+      // ==========================================================
+      // CARÁTULA Y ANTECEDENTES GENERALES DEL CASO
+      // ==========================================================
+      const estudiante = protocolo.estudiante || {}
+      const apoderado = estudiante.apoderados || {}
+      const curso = estudiante.cursos?.nombre || 'Sin curso'
+      const tipoNombre = protocolo.tipo_protocolo || protocolo.tipos_protocolo?.nombre || 'Protocolo Normativo'
+
+      const yInicioCaratula = doc.y
+      doc.rect(50, yInicioCaratula, pageWidth, 85).fill(GRIS_FONDO).strokeColor(GRIS_BORDE).lineWidth(0.8).stroke()
+
+      doc.fillColor(AZUL).fontSize(9.5).font('Helvetica-Bold').text('1. ANTECEDENTES GENERALES DEL PROTOCOLO', 60, yInicioCaratula + 8)
+
+      doc.fontSize(8).font('Helvetica').fillColor(GRIS_TEXTO)
+
+      // Columna 1
+      doc.font('Helvetica-Bold').text('Tipología RICE:', 60, yInicioCaratula + 25)
+      doc.font('Helvetica').text(tipoNombre, 135, yInicioCaratula + 25)
+
+      doc.font('Helvetica-Bold').text('Estado del Caso:', 60, yInicioCaratula + 38)
+      doc.font('Helvetica-Bold').fillColor(protocolo.estado === 'Cerrado' ? VERDE : AMBAR).text(protocolo.estado || 'En Investigación', 135, yInicioCaratula + 38)
+
+      doc.fillColor(GRIS_TEXTO)
+      doc.font('Helvetica-Bold').text('Fecha Apertura:', 60, yInicioCaratula + 51)
+      doc.font('Helvetica').text(protocolo.fecha_apertura ? new Date(protocolo.fecha_apertura).toLocaleDateString('es-CL') : 'No registrada', 135, yInicioCaratula + 51)
+
+      doc.font('Helvetica-Bold').text('Fecha de Cierre:', 60, yInicioCaratula + 64)
+      doc.font('Helvetica').text(protocolo.fecha_cierre ? new Date(protocolo.fecha_cierre).toLocaleDateString('es-CL') : 'En tramitación activa', 135, yInicioCaratula + 64)
+
+      // Columna 2: Datos Alumno
+      const col2X = 300
+      doc.font('Helvetica-Bold').text('Estudiante Titular:', col2X, yInicioCaratula + 25)
+      doc.font('Helvetica').text(`${estudiante.nombre || ''} ${estudiante.apellido || ''}`, col2X + 80, yInicioCaratula + 25)
+
+      doc.font('Helvetica-Bold').text('RUT:', col2X, yInicioCaratula + 38)
+      doc.font('Helvetica').text(estudiante.rut || 'No informado', col2X + 80, yInicioCaratula + 38)
+
+      doc.font('Helvetica-Bold').text('Curso:', col2X, yInicioCaratula + 51)
+      doc.font('Helvetica').text(curso, col2X + 80, yInicioCaratula + 51)
+
+      doc.font('Helvetica-Bold').text('Apoderado Titular:', col2X, yInicioCaratula + 64)
+      const apoderadoTxt = apoderado.nombre ? `${apoderado.nombre} (${apoderado.telefono || 'Sin fono'})` : 'No registrado'
+      doc.font('Helvetica').text(apoderadoTxt, col2X + 80, yInicioCaratula + 64, { width: 150 })
+
+      doc.y = yInicioCaratula + 95
+
+      // Observaciones iniciales
+      if (protocolo.observaciones) {
+        doc.fillColor(AZUL).fontSize(9.5).font('Helvetica-Bold').text('2. GLOSA / OBSERVACIONES INICIALES AL APERTURAR')
+        doc.moveDown(0.3)
+        doc
+          .fillColor(GRIS_TEXTO)
+          .fontSize(8)
+          .font('Helvetica')
+          .text(protocolo.observaciones, { align: 'justify', lineGap: 2 })
+        doc.moveDown(0.8)
+      }
+
+      // ==========================================================
+      // SECCIÓN 2: TRAZABILIDAD DE PASOS NORMATIVOS (CHECKLIST RICE)
+      // ==========================================================
+      if (doc.y > doc.page.height - 180) doc.addPage()
+
+      doc.fillColor(AZUL).fontSize(9.5).font('Helvetica-Bold').text('3. TRAZABILIDAD Y CERTIFICACIÓN DE PASOS NORMATIVOS')
+      doc.moveDown(0.4)
+
+      if (!pasos || pasos.length === 0) {
+        doc.fontSize(8).font('Helvetica-Oblique').fillColor(GRIS_SUAVE).text('No hay pasos normativos registrados para este protocolo.')
+        doc.moveDown(0.8)
+      } else {
+        pasos.forEach((paso) => {
+          if (doc.y > doc.page.height - 100) doc.addPage()
+
+          const yPaso = doc.y
+          const isDone = Boolean(paso.completado)
+
+          doc.rect(50, yPaso, pageWidth, 42).fill(isDone ? '#f0fdf4' : '#fffbeb').strokeColor(isDone ? '#bbf7d0' : '#fef3c7').lineWidth(0.6).stroke()
+
+          doc.fillColor(isDone ? VERDE : AMBAR).fontSize(8).font('Helvetica-Bold').text(`Paso #${paso.orden} [${isDone ? 'COMPLETADO' : 'PENDIENTE'}] — Plazo: ${paso.plazo_dias} días`, 58, yPaso + 6)
+
+          doc.fillColor(GRIS_TEXTO).fontSize(7.5).font('Helvetica-Bold').text(paso.accion, 58, yPaso + 17, { width: pageWidth - 16 })
+
+          const fechaPaso = paso.fecha_completado
+            ? new Date(paso.fecha_completado).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'Pendiente'
+          const respPaso = paso.responsable ? `${paso.responsable.nombre} ${paso.responsable.apellido}` : 'Sin certificar'
+          const obsPaso = paso.observacion ? `Glosa: "${paso.observacion}"` : 'Sin observación registrada'
+
+          doc.fillColor(GRIS_SUAVE).fontSize(7).font('Helvetica').text(`Certificado el: ${fechaPaso} | Por: ${respPaso} | ${obsPaso}`, 58, yPaso + 28, { width: pageWidth - 16, lineBreak: false })
+
+          doc.y = yPaso + 46
+        })
+        doc.moveDown(0.6)
+      }
+
+      // ==========================================================
+      // SECCIÓN 3: ANEXO DE EVIDENCIAS Y DOCUMENTOS PROBATORIOS
+      // ==========================================================
+      if (doc.y > doc.page.height - 200) doc.addPage()
+
+      doc.fillColor(AZUL).fontSize(9.5).font('Helvetica-Bold').text('4. ANEXO: REGISTRO DE EVIDENCIAS Y DOCUMENTOS PROBATORIOS (RESPALDO DE AUDITORÍA)')
+      doc.moveDown(0.2)
+      doc.fontSize(7.5).font('Helvetica-Oblique').fillColor(GRIS_SUAVE).text('Listado oficial de medios de prueba físicos y digitales incorporados al expediente en cumplimiento del debido proceso.')
+      doc.moveDown(0.5)
+
+      // Recopilar todas las evidencias de todos los pasos
+      const todasEvidencias = []
+      pasos.forEach((p) => {
+        if (Array.isArray(p.evidencias)) {
+          p.evidencias.forEach((ev) => {
+            todasEvidencias.push({
+              ...ev,
+              pasoOrden: p.orden,
+              pasoAccion: p.accion,
+            })
+          })
+        }
+      })
+
+      if (todasEvidencias.length === 0) {
+        doc.rect(50, doc.y, pageWidth, 28).fill(GRIS_FONDO).strokeColor(GRIS_BORDE).lineWidth(0.5).stroke()
+        doc.fillColor(GRIS_SUAVE).fontSize(8).font('Helvetica').text('No se adjuntaron documentos probatorios externos durante la tramitación de este protocolo.', 60, doc.y + 9)
+        doc.y += 35
+      } else {
+        // Cabecera de la tabla de evidencias
+        const yHead = doc.y
+        doc.rect(50, yHead, pageWidth, 18).fill(AZUL)
+        doc.fillColor('white').fontSize(7.5).font('Helvetica-Bold')
+        doc.text('Hito / Paso', 55, yHead + 5, { width: 65 })
+        doc.text('Documento Probatorio', 125, yHead + 5, { width: 170 })
+        doc.text('Fecha / Hora Registro', 300, yHead + 5, { width: 95 })
+        doc.text('Funcionario', 400, yHead + 5, { width: 75 })
+        doc.text('Tamaño', 480, yHead + 5, { width: 60 })
+        doc.y = yHead + 18
+
+        todasEvidencias.forEach((ev, idx) => {
+          if (doc.y > doc.page.height - 60) doc.addPage()
+
+          const yRow = doc.y
+          const rowHeight = 20
+          doc.rect(50, yRow, pageWidth, rowHeight).fill(idx % 2 === 0 ? 'white' : GRIS_FONDO).strokeColor(GRIS_BORDE).lineWidth(0.4).stroke()
+
+          doc.fillColor(GRIS_TEXTO).fontSize(7).font('Helvetica')
+          doc.text(`Paso #${ev.pasoOrden}`, 55, yRow + 5, { width: 65 })
+          doc.font('Helvetica-Bold').text(ev.nombre_archivo || 'Archivo de evidencia', 125, yRow + 5, { width: 170, lineBreak: false })
+
+          const fechaEv = ev.created_at
+            ? new Date(ev.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'No registrada'
+          doc.font('Helvetica').text(fechaEv, 300, yRow + 5, { width: 95 })
+
+          const subidor = ev.subido_por ? `${ev.subido_por.nombre} ${ev.subido_por.apellido}` : 'Equipo Convivencia'
+          doc.text(subidor, 400, yRow + 5, { width: 75, lineBreak: false })
+
+          const tamano = ev.tamano_bytes ? `${(ev.tamano_bytes / 1024).toFixed(1)} KB` : 'N/A'
+          doc.text(tamano, 480, yRow + 5, { width: 60 })
+
+          doc.y = yRow + rowHeight
+        })
+        doc.moveDown(0.8)
+      }
+
+      // ==========================================================
+      // BLOQUE DE FIRMA ÚNICA INSTITUCIONAL (Hallazgo 1)
+      // ==========================================================
+      if (doc.y > doc.page.height - 120) doc.addPage()
+
+      const yFirmas = doc.y + 40
+      const anchoFirma = 220
+      const xFirma = (doc.page.width - anchoFirma) / 2 // Centrada exclusivamente
+
+      doc.strokeColor(GRIS_SUAVE).lineWidth(0.8).moveTo(xFirma, yFirmas).lineTo(xFirma + anchoFirma, yFirmas).stroke()
+
+      doc
+        .fillColor(GRIS_TEXTO)
+        .fontSize(8.5)
+        .font('Helvetica-Bold')
+        .text('ENCARGADO(A) DE CONVIVENCIA ESCOLAR', xFirma, yFirmas + 5, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
+      doc
+        .fontSize(7.5)
+        .font('Helvetica')
+        .text('Escuela Coeducacional N° 1 El Salvador', xFirma, yFirmas + 17, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
+      doc
+        .fontSize(6.5)
+        .fillColor(GRIS_SUAVE)
+        .text('Certificación de Trazabilidad y Debido Proceso RICE', xFirma, yFirmas + 27, {
+          width: anchoFirma,
+          align: 'center',
+        })
+
+      // ==========================================================
+      // GLOSA DE PIE DE PÁGINA EN TODAS LAS PÁGINAS
+      // ==========================================================
+      const range = doc.bufferedPageRange()
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i)
+        doc
+          .fillColor(GRIS_SUAVE)
+          .fontSize(6.5)
+          .font('Helvetica')
+          .text(
+            `Expediente Oficial de Convivencia Escolar — Escuela Coeducacional N°1 El Salvador | Protegido por Ley N° 19.628 de Protección de Datos Personales | Página ${i + 1} de ${range.count}`,
+            50,
+            doc.page.height - 25,
+            { align: 'center', width: pageWidth }
+          )
+      }
+
+      doc.end()
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
 module.exports = {
   generarHistorialPDF,
   generarPerfilEstudiante,
   generarInformeOficialIncidentePDF,
+  generarExpedienteProtocoloPDF,
 }

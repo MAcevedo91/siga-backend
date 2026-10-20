@@ -3,6 +3,11 @@ const { supabase }          = require('../utils/db')
 const emailService          = require('./emailService')
 const notificacionesService = require('./notificacionesService')
 const { registrarAuditoria } = require('./auditoriaService')
+const {
+  subirEvidenciaStorage,
+  eliminarEvidenciaStorage,
+} = require('./evidenciasStorageService')
+const pdfService            = require('./pdfService')
 const logger                = require('../utils/logger')
 
 // =============================================================================
@@ -348,16 +353,37 @@ const cambiarEstado = async (id, tenantId, nuevoEstado, observaciones) => {
 }
 
 /**
- * Lista los 10 tipos de protocolo RICE (catálogo).
+ * Lista los tipos de protocolo RICE (catálogo).
+ * Filtra los tipos subsumidos (Violencia intrafamiliar y Abuso sexual) conforme al Hallazgo 6.
  */
+const PROTOCOLOS_SUBSUMIDOS = [
+  'Violencia intrafamiliar',
+  'Abuso sexual entre estudiantes',
+  'Abuso sexual por adulto',
+]
+
 const listarTiposProtocolo = async () => {
+  // Intentar consultar con activo y descripcion
   const { data, error } = await supabase
     .from('tipos_protocolo')
-    .select('id, nombre')
+    .select('id, nombre, activo, descripcion')
     .order('id')
 
-  if (error) throw error
-  return data
+  if (error) {
+    // Fallback retrocompatible si aún no se han aplicado las nuevas columnas
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('tipos_protocolo')
+      .select('id, nombre')
+      .order('id')
+
+    if (fallbackError) throw fallbackError
+    return (fallbackData || []).filter(t => !PROTOCOLOS_SUBSUMIDOS.includes(t.nombre))
+  }
+
+  // Filtrar activos y que no estén en la lista de subsumidos
+  return (data || []).filter(
+    t => t.activo !== false && !PROTOCOLOS_SUBSUMIDOS.includes(t.nombre)
+  )
 }
 
 /**
@@ -412,7 +438,33 @@ const listarPasosProtocolo = async (protocoloId, tenantId) => {
     throw err
   }
 
-  return pasos || []
+  // 3. Obtener evidencias adjuntas si la tabla existe
+  let evidenciasPorPaso = {}
+  try {
+    const { data: evidencias, error: evError } = await supabase
+      .from('protocolo_paso_evidencias')
+      .select(`
+        id, paso_id, nombre_archivo, url_archivo, storage_path, mime_type, tamano_bytes, created_at,
+        subido_por:usuarios ( id, nombre, apellido )
+      `)
+      .eq('protocolo_id', protocoloId)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: true })
+
+    if (!evError && Array.isArray(evidencias)) {
+      evidencias.forEach((ev) => {
+        if (!evidenciasPorPaso[ev.paso_id]) evidenciasPorPaso[ev.paso_id] = []
+        evidenciasPorPaso[ev.paso_id].push(ev)
+      })
+    }
+  } catch (err) {
+    logger.warn('No se pudieron consultar evidencias de pasos (degradación grácil):', { error: err.message })
+  }
+
+  return (pasos || []).map((p) => ({
+    ...p,
+    evidencias: evidenciasPorPaso[p.id] || [],
+  }))
 }
 
 /**
@@ -515,6 +567,234 @@ const actualizarPasoProtocolo = async (protocoloId, pasoId, tenantId, usuarioId,
   return pasoActualizado
 }
 
+/**
+ * Sube un archivo probatorio a Supabase Storage y registra su metadato en protocolo_paso_evidencias.
+ */
+const subirEvidenciaPaso = async (protocoloId, pasoId, tenantId, usuarioId, file, ip) => {
+  if (!file || !file.buffer) {
+    const err = new Error('No se ha proporcionado ningún archivo para adjuntar')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 1. Validar existencia de protocolo y pertenencia al tenant
+  const { data: prot, error: protError } = await supabase
+    .from('protocolos_rice')
+    .select('id, estado')
+    .eq('id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (protError || !prot) {
+    const err = new Error('Protocolo no encontrado o no pertenece a este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  if (prot.estado === 'Cerrado') {
+    const err = new Error('No se pueden adjuntar evidencias a un protocolo cerrado')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 2. Validar que el paso pertenezca al protocolo
+  const { data: paso, error: pasoError } = await supabase
+    .from('protocolo_pasos')
+    .select('id, orden')
+    .eq('id', pasoId)
+    .eq('protocolo_id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (pasoError || !paso) {
+    const err = new Error('Paso normativo no encontrado o no pertenece a este protocolo')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 3. Subir archivo a Supabase Storage
+  const { publicUrl, storagePath, nombreArchivo } = await subirEvidenciaStorage({
+    tenantId,
+    protocoloId,
+    pasoId,
+    buffer: file.buffer,
+    nombreOriginal: file.originalname,
+    mimeType: file.mimetype,
+  })
+
+  // 4. Insertar registro en la base de datos
+  const evidenciaData = {
+    tenant_id: tenantId,
+    protocolo_id: protocoloId,
+    paso_id: pasoId,
+    nombre_archivo: nombreArchivo,
+    url_archivo: publicUrl,
+    storage_path: storagePath,
+    mime_type: file.mimetype,
+    tamano_bytes: file.size || file.buffer.length,
+    subido_por: usuarioId,
+  }
+
+  const { data: evidenciaCreada, error: insertError } = await supabase
+    .from('protocolo_paso_evidencias')
+    .insert([evidenciaData])
+    .select(`
+      id, paso_id, protocolo_id, nombre_archivo, url_archivo, storage_path, mime_type, tamano_bytes, created_at,
+      subido_por:usuarios ( id, nombre, apellido )
+    `)
+    .single()
+
+  if (insertError) {
+    logger.error('Error al registrar evidencia en BD, purgando archivo en Storage', {
+      storagePath,
+      error: insertError.message,
+    })
+    await eliminarEvidenciaStorage(storagePath)
+    throw insertError
+  }
+
+  // 5. Registrar en auditoría
+  await registrarAuditoria({
+    tenantId,
+    userId: usuarioId,
+    accion: 'CREATE',
+    tabla: 'protocolo_paso_evidencias',
+    registroId: evidenciaCreada.id,
+    datosBefore: null,
+    datosAfter: evidenciaCreada,
+    ip: ip || null,
+  }).catch((err) => {
+    logger.error('Error al auditar subida de evidencia', { error: err.message })
+  })
+
+  return evidenciaCreada
+}
+
+/**
+ * Elimina una evidencia de un paso tanto de la BD como de Supabase Storage.
+ */
+const eliminarEvidenciaPaso = async (protocoloId, pasoId, evidenciaId, tenantId, usuarioId, ip) => {
+  // 1. Validar existencia del protocolo
+  const { data: prot, error: protError } = await supabase
+    .from('protocolos_rice')
+    .select('id, estado')
+    .eq('id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (protError || !prot) {
+    const err = new Error('Protocolo no encontrado o no pertenece a este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  if (prot.estado === 'Cerrado') {
+    const err = new Error('No se pueden eliminar evidencias de un protocolo cerrado')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 2. Obtener la evidencia
+  const { data: evidencia, error: evError } = await supabase
+    .from('protocolo_paso_evidencias')
+    .select('*')
+    .eq('id', evidenciaId)
+    .eq('paso_id', pasoId)
+    .eq('protocolo_id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (evError || !evidencia) {
+    const err = new Error('Archivo de evidencia no encontrado o no pertenece a este paso')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 3. Eliminar de la base de datos
+  const { error: deleteError } = await supabase
+    .from('protocolo_paso_evidencias')
+    .delete()
+    .eq('id', evidenciaId)
+    .eq('tenant_id', tenantId)
+
+  if (deleteError) throw deleteError
+
+  // 4. Purgar archivo físico en Storage
+  await eliminarEvidenciaStorage(evidencia.storage_path)
+
+  // 5. Registrar en auditoría
+  await registrarAuditoria({
+    tenantId,
+    userId: usuarioId,
+    accion: 'DELETE',
+    tabla: 'protocolo_paso_evidencias',
+    registroId: evidenciaId,
+    datosBefore: evidencia,
+    datosAfter: null,
+    ip: ip || null,
+  }).catch((err) => {
+    logger.error('Error al auditar eliminación de evidencia', { error: err.message })
+  })
+
+  return { success: true, id: evidenciaId }
+}
+
+/**
+ * Genera el buffer PDF del Expediente Oficial del Protocolo RICE con evidencias
+ * para ser descargado o remitido en auditorías de la Superintendencia de Educación.
+ *
+ * @param {string} protocoloId - ID del protocolo RICE
+ * @param {string} tenantId - Tenant ID de la institución
+ * @returns {Promise<{ pdfBuffer: Buffer, filename: string }>}
+ */
+const generarPdfExpedienteProtocolo = async (protocoloId, tenantId) => {
+  const { data: prot, error } = await supabase
+    .from('protocolos_rice')
+    .select(`
+      id, estado, fecha_apertura, fecha_cierre, observaciones, fecha_creacion,
+      tipos_protocolo ( id, nombre ),
+      estudiantes (
+        id, rut, nombre, apellido,
+        cursos ( id, nombre ),
+        apoderados ( id, nombre, apellido, telefono, email, es_titular )
+      ),
+      usuarios ( id, nombre, apellido )
+    `)
+    .eq('id', protocoloId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (error || !prot) {
+    const err = new Error('Protocolo no encontrado')
+    err.statusCode = 404
+    throw err
+  }
+
+  const estudiante = prot.estudiantes || {}
+  const listaApoderados = Array.isArray(estudiante.apoderados) ? estudiante.apoderados : []
+  const apoderadoTitular = listaApoderados.find((a) => a.es_titular) || listaApoderados[0] || {}
+
+  const protocoloFormateado = {
+    ...prot,
+    tipo_protocolo: prot.tipos_protocolo?.nombre || 'Protocolo Normativo RICE',
+    estudiante: {
+      ...estudiante,
+      apoderados: apoderadoTitular,
+      cursos: estudiante.cursos,
+    },
+  }
+
+  const pasos = await listarPasosProtocolo(protocoloId, tenantId).catch(() => [])
+
+  const pdfBuffer = await pdfService.generarExpedienteProtocoloPDF(protocoloFormateado, pasos)
+
+  const apellidoEst = (estudiante.apellido || 'Estudiante').replace(/\s+/g, '_')
+  const folio = String(protocoloId).substring(0, 8).toUpperCase()
+  const filename = `Expediente_RICE_${folio}_${apellidoEst}.pdf`
+
+  return { pdfBuffer, filename }
+}
+
 module.exports = {
   listarProtocolos,
   obtenerProtocolo,
@@ -524,4 +804,8 @@ module.exports = {
   calcularAccionesPendientes,
   listarPasosProtocolo,
   actualizarPasoProtocolo,
+  subirEvidenciaPaso,
+  eliminarEvidenciaPaso,
+  generarPdfExpedienteProtocolo,
 }
+
