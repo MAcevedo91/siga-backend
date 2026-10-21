@@ -9,6 +9,9 @@ const {
   listarCompromisosHandler,
   descargarActaPdfHandler,
   despacharActaHandler,
+  evaluarCompromisosHandler,
+  cerrarMediacionHandler,
+  historialEstudianteHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -23,6 +26,14 @@ router.get(
   '/',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
   listarHandler
+)
+
+// Consultar historial conductual y restaurativo por estudiante (TASK 7.2.4.1)
+// Nota: Se registra antes de /:id para evitar colisión de rutas en Express
+router.get(
+  '/estudiante/:estudianteId',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  historialEstudianteHandler
 )
 
 // Obtener expediente detallado de una mediación por ID (incluye participantes y compromisos)
@@ -44,6 +55,20 @@ router.post(
   '/:id/despachar-acta',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
   despacharActaHandler
+)
+
+// Evaluar cumplimiento de acuerdos formativos (cumplido, parcial, incumplido - TASK 7.2.4.1)
+router.patch(
+  '/:id/evaluar-compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  evaluarCompromisosHandler
+)
+
+// Sellar y cerrar inmutablemente el expediente de mediación (TASK 7.2.4.1)
+router.patch(
+  '/:id/cerrar',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  cerrarMediacionHandler
 )
 
 // Registrar nueva mediación con participantes

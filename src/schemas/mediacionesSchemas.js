@@ -204,12 +204,54 @@ const crearGuardarCompromisosSchema = (fechaMediacion) => {
   })
 }
 
+// =============================================================================
+// ESQUEMAS: EVALUACIÓN DE COMPROMISOS Y CIERRE INMUTABLE (TASK 7.2.4.1)
+// =============================================================================
+
+const ESTADOS_EVALUACION = ['cumplido', 'parcial', 'incumplido']
+const ESTADOS_CIERRE = ['acordada', 'sin_acuerdo', 'derivada_inspectoria']
+
+const evaluacionItemSchema = z.object({
+  compromiso_id: z.string().uuid('compromiso_id debe ser un UUID válido'),
+  estado: z.enum(ESTADOS_EVALUACION, {
+    message: `Estado de evaluación inválido. Opciones: ${ESTADOS_EVALUACION.join(', ')}`,
+  }),
+  observaciones_seguimiento: z.string().max(1000, 'Las observaciones no pueden superar los 1000 caracteres').optional().nullable(),
+})
+
+const evaluarCompromisosSchema = z.object({
+  evaluaciones: z
+    .array(evaluacionItemSchema)
+    .min(1, 'Debe incluir al menos una evaluación de compromiso formativo'),
+})
+
+const cerrarMediacionSchema = z.object({
+  estado: z.enum(ESTADOS_CIERRE, {
+    message: `Estado de cierre inválido. Opciones: ${ESTADOS_CIERRE.join(', ')}`,
+  }),
+  conclusiones_cierre: z
+    .string({ required_error: 'Las conclusiones de cierre son requeridas' })
+    .trim()
+    .min(10, 'Las conclusiones de cierre deben tener al menos 10 caracteres')
+    .max(3000, 'Las conclusiones de cierre no pueden superar los 3000 caracteres'),
+  protocolo_rice: z
+    .object({
+      tipo_protocolo_id: z.number().int().positive('tipo_protocolo_id debe ser un entero positivo'),
+      estudiante_id: z.string().uuid('estudiante_id del protocolo debe ser UUID válido').optional().nullable(),
+      observaciones: z.string().max(2000).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
+})
+
 module.exports = {
   TIPOS_ORIGEN,
   ESTADOS_MEDIACION,
   ROLES_PARTICIPANTE,
   MEDIOS_AVISO,
   TIPOS_COMPROMISO,
+  ESTADOS_EVALUACION,
+  ESTADOS_CIERRE,
   participanteSchema,
   crearMediacionSchema,
   filtrosMediacionesSchema,
@@ -217,4 +259,7 @@ module.exports = {
   compromisoItemSchema,
   guardarCompromisosBaseSchema,
   crearGuardarCompromisosSchema,
+  evaluacionItemSchema,
+  evaluarCompromisosSchema,
+  cerrarMediacionSchema,
 }

@@ -196,6 +196,86 @@ const despacharActaHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * PATCH /api/v1/mediaciones/:id/evaluar-compromisos
+ * Evalúa el cumplimiento de compromisos formativos (cumplido, parcial, incumplido).
+ */
+const evaluarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.evaluarCompromisos(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Compromisos formativos evaluados exitosamente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en evaluarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * PATCH /api/v1/mediaciones/:id/cerrar
+ * Sella inmutablemente el expediente de mediación escolar y opcionalmente enlaza protocolo RICE.
+ */
+const cerrarMediacionHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.cerrarMediacion(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Expediente de mediación cerrado y sellado inmutablemente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en cerrarMediacionHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/estudiante/:estudianteId
+ * Retorna el historial conductual y restaurativo de un estudiante en mediaciones escolares.
+ */
+const historialEstudianteHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { estudianteId } = req.params
+
+    const data = await mediacionesService.obtenerHistorialMediacionesEstudiante(
+      tenantId,
+      estudianteId
+    )
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en historialEstudianteHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
@@ -205,4 +285,7 @@ module.exports = {
   listarCompromisosHandler,
   descargarActaPdfHandler,
   despacharActaHandler,
+  evaluarCompromisosHandler,
+  cerrarMediacionHandler,
+  historialEstudianteHandler,
 }
