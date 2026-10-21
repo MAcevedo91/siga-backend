@@ -286,8 +286,7 @@ const obtenerMediacionPorId = async (tenantId, id) => {
           nombre,
           apellido,
           curso_id,
-          cursos ( id, nombre, nivel, letra, anio_academico ),
-
+          cursos ( id, nombre, nivel, letra, anio_academico, profesor_jefe_id ),
           apoderados ( id, rut, nombre, apellido, email, telefono, es_titular )
         )
       ),

@@ -8,6 +8,7 @@ const {
   guardarCompromisosHandler,
   listarCompromisosHandler,
   descargarActaPdfHandler,
+  despacharActaHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -36,6 +37,13 @@ router.get(
   '/:id/acta-pdf',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
   descargarActaPdfHandler
+)
+
+// Despachar transaccionalmente el Acta Oficial en PDF a apoderados y profesores jefes (TASK 7.2.3.2)
+router.post(
+  '/:id/despachar-acta',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  despacharActaHandler
 )
 
 // Registrar nueva mediación con participantes

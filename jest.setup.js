@@ -3,6 +3,9 @@ process.env.SUPABASE_URL = 'https://test.supabase.co'
 process.env.SUPABASE_SERVICE_KEY = 'test-service-key'
 process.env.NODE_ENV = 'test'
 
+// Timeout ampliado a 15s para suites que ejecutan tests de integración y controladores en paralelo
+jest.setTimeout(15000)
+
 // Mock isomorphic-dompurify to avoid ESM issues in Jest
 // Simple sanitization that removes script tags and dangerous attributes
 jest.mock('isomorphic-dompurify', () => ({

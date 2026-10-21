@@ -1,5 +1,6 @@
 const mediacionesService = require('../services/mediacionesService')
 const pdfMediacionService = require('../services/pdfMediacionService')
+const emailServiceMediacion = require('../services/emailServiceMediacion')
 const logger = require('../utils/logger')
 
 /**
@@ -168,6 +169,33 @@ const descargarActaPdfHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * POST /api/v1/mediaciones/:id/despachar-acta
+ * Despacha transaccionalmente el Acta Oficial en PDF a apoderados titulares y profesores jefes desduplicados.
+ */
+const despacharActaHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const resultado = await emailServiceMediacion.despacharActaOficial({
+      tenantId,
+      mediacionId: id,
+      usuarioId,
+    })
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Acta oficial de mediación despachada exitosamente',
+      data: resultado,
+    })
+  } catch (err) {
+    logger.error('Error en despacharActaHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
@@ -176,4 +204,5 @@ module.exports = {
   guardarCompromisosHandler,
   listarCompromisosHandler,
   descargarActaPdfHandler,
+  despacharActaHandler,
 }

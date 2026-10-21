@@ -35,11 +35,16 @@ function renderAvisoMediacionApoderadoTemplate(data) {
   return renderTemplate('aviso-mediacion-apoderado', data)
 }
 
+function renderActaMediacionOficialTemplate(data) {
+  return renderTemplate('acta-mediacion-oficial', data)
+}
+
 module.exports = {
   renderIncidenteGraveTemplate,
   renderProtocoloAbiertoTemplate,
   renderProtocoloVencidoTemplate,
   renderInformeOficialApoderadoTemplate,
   renderAvisoMediacionApoderadoTemplate,
+  renderActaMediacionOficialTemplate,
 }
 
