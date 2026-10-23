@@ -11,6 +11,9 @@ const {
   pdfHandler,
   antecedentesEscaladaHandler,
 } = require('../controllers/estudiantesController')
+const {
+  obtenerExpedienteSaludHandler,
+} = require('../controllers/reporteEspecialistaController')
 
 
 const router = Router()
@@ -68,6 +71,14 @@ router.get('/:id/perfil', cacheMiddleware(600), perfilHandler)
 
 // Análisis predictivo y antecedentes — tiempo real (sin cache para reflejar incidentes inmediatos)
 router.get('/:id/antecedentes-escalada', antecedentesEscaladaHandler)
+
+// Expediente escolar sanitizado para derivación a especialista de salud (TASK 8.2.1.1)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/expediente-salud',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  obtenerExpedienteSaludHandler
+)
 
 
 // PDF — solo Administrador y Equipo de Formación
