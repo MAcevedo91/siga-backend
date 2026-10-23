@@ -21,6 +21,7 @@ router.use('/configuracion', require('../configuracion.routes'))
 router.use('/cierre-anio',   require('../cierreAnio.routes'))
 router.use('/rice',          require('../rice.routes'))
 router.use('/mediaciones',   require('../mediaciones.routes'))
+router.use('/sociograma',    require('../sociograma.routes'))
 
 
 
