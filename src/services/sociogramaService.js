@@ -2,7 +2,7 @@ const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
 
 // =============================================================================
-// SERVICIO DE SOCIOGRAMA ESCOLAR: MATRIZ DE ADYACENCIA PONDERADA (TASK 8.1.1.1)
+// SERVICIO DE SOCIOGRAMA ESCOLAR: MATRIZ DE ADYACENCIA PONDERADA (TASK 8.1.1.1 & 8.1.2.1)
 // =============================================================================
 
 // Ponderaciones oficiales por gravedad de falta y acuerdos restaurativos
@@ -49,6 +49,176 @@ const clasificarTipoVinculo = (peso) => {
   if (peso > 0) return 'conflicto_leve'
   if (peso < 0) return 'acuerdo_restaurativo'
   return 'neutro'
+}
+
+/**
+ * Calcula la centralidad de grado absoluta y normalizada (0 a 100)
+ * para cada nodo a partir de la matriz de adyacencia simétrica.
+ *
+ * C_D(i) = k_i / (N - 1) * 100
+ *
+ * @param {Array<Array<number>>} matriz - Matriz de adyacencia N x N
+ * @param {number} n - Cantidad de nodos
+ * @returns {Array<{ grado: number, centralidad_grado_pct: number }>}
+ */
+const calcularCentralidadGrado = (matriz, n) => {
+  if (!matriz || n <= 0) return []
+  return matriz.map((fila, i) => {
+    let k = 0
+    for (let j = 0; j < n; j++) {
+      if (i !== j && fila[j] !== 0) {
+        k++
+      }
+    }
+    const pct = n > 1 ? Number(((k / (n - 1)) * 100).toFixed(2)) : 0
+    return {
+      grado: k,
+      centralidad_grado_pct: pct,
+    }
+  })
+}
+
+/**
+ * Calcula el coeficiente de agrupamiento local de Watts-Strogatz para cada nodo
+ * y el coeficiente de agrupamiento promedio global del aula (normalizados de 0 a 100).
+ *
+ * C_i = (2 * e_i) / (k_i * (k_i - 1))  si k_i >= 2; de lo contrario 0.
+ *
+ * @param {Array<Array<number>>} matriz - Matriz de adyacencia N x N
+ * @param {number} n - Cantidad de nodos
+ * @returns {{ coeficientesLocales: Array<{ clustering_local: number, clustering_local_pct: number, triangulos: number }>, coeficienteAgrupamientoPromedioPct: number }}
+ */
+const calcularCoeficienteAgrupamiento = (matriz, n) => {
+  if (!matriz || n <= 0) {
+    return {
+      coeficientesLocales: [],
+      coeficienteAgrupamientoPromedioPct: 0,
+    }
+  }
+
+  // Identificar vecinos de cada nodo
+  const vecinosPorNodo = Array.from({ length: n }, () => [])
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i !== j && matriz[i][j] !== 0) {
+        vecinosPorNodo[i].push(j)
+      }
+    }
+  }
+
+  let sumaClustering = 0
+  const coeficientesLocales = vecinosPorNodo.map((vecinos) => {
+    const k = vecinos.length
+    if (k < 2) {
+      return {
+        clustering_local: 0,
+        clustering_local_pct: 0,
+        triangulos: 0,
+      }
+    }
+
+    // Contar aristas entre los vecinos del nodo actual
+    let enlacesEntreVecinos = 0
+    for (let uIdx = 0; uIdx < k; uIdx++) {
+      for (let vIdx = uIdx + 1; vIdx < k; vIdx++) {
+        const u = vecinos[uIdx]
+        const v = vecinos[vIdx]
+        if (matriz[u][v] !== 0) {
+          enlacesEntreVecinos++
+        }
+      }
+    }
+
+    const posiblesEnlaces = (k * (k - 1)) / 2
+    const cLocal = posiblesEnlaces > 0 ? enlacesEntreVecinos / posiblesEnlaces : 0
+    sumaClustering += cLocal
+
+    return {
+      clustering_local: Number(cLocal.toFixed(4)),
+      clustering_local_pct: Number((cLocal * 100).toFixed(2)),
+      triangulos: enlacesEntreVecinos,
+    }
+  })
+
+  const cPromedio = n > 0 ? sumaClustering / n : 0
+  const cPromedioPct = Number((cPromedio * 100).toFixed(2))
+
+  return {
+    coeficientesLocales,
+    coeficienteAgrupamientoPromedioPct: cPromedioPct,
+  }
+}
+
+/**
+ * Calcula el índice integral de cohesión de aula y diagnóstico pedagógico no estigmatizante (0 a 100).
+ *
+ * @param {Object} params
+ * @param {number} params.n - Total de estudiantes
+ * @param {number} params.aisladosCount - Cantidad de estudiantes aislados
+ * @param {number} params.coeficienteAgrupamientoPromedioPct - Coeficiente de agrupamiento promedio (0-100)
+ * @param {number} params.totalConflictividad - Suma de pesos positivos de tensión
+ * @param {number} params.mediacionesCount - Cantidad de mediaciones realizadas
+ * @param {number} params.densidadRedPct - Densidad de red en porcentaje (0-100)
+ * @returns {{ indice_cohesion: number, diagnostico_clima: string, tasa_integracion_pct: number }}
+ */
+const calcularIndiceCohesion = ({
+  n,
+  aisladosCount = 0,
+  coeficienteAgrupamientoPromedioPct = 0,
+  totalConflictividad = 0,
+  mediacionesCount = 0,
+  densidadRedPct = 0,
+}) => {
+  if (n <= 1) {
+    return {
+      indice_cohesion: 100,
+      diagnostico_clima: 'Cohesión positiva y clima colaborativo',
+      tasa_integracion_pct: 100,
+    }
+  }
+
+  // Tasa de integración (estudiantes no aislados)
+  const noAislados = Math.max(0, n - aisladosCount)
+  const tasaIntegracionPct = Number(((noAislados / n) * 100).toFixed(2))
+
+  // Si no hay ningún conflicto ni enlaces en el curso, el clima es armónico y colaborativo
+  if (totalConflictividad === 0 && mediacionesCount === 0) {
+    return {
+      indice_cohesion: 100,
+      diagnostico_clima: 'Cohesión positiva y clima colaborativo',
+      tasa_integracion_pct: tasaIntegracionPct,
+    }
+  }
+
+  // Factor de armonía: penaliza el conflicto per cápita y bonifica las mediaciones restaurativas
+  const conflictoPerCapita = totalConflictividad / n
+  const bonoMediacion = Math.min(25, mediacionesCount * 5)
+  const penalizacionConflicto = conflictoPerCapita * 12
+  const factorArmonia = Math.max(0, Math.min(100, 100 - penalizacionConflicto + bonoMediacion))
+
+  // Ponderación de cohesión: 50% armonía/baja tensión, 30% integración grupal, 20% agrupamiento
+  const cohesionCruda =
+    factorArmonia * 0.5 +
+    tasaIntegracionPct * 0.3 +
+    coeficienteAgrupamientoPromedioPct * 0.2
+
+  const indiceCohesion = Number(Math.max(0, Math.min(100, cohesionCruda)).toFixed(2))
+
+  // Diagnóstico pedagógico institucional (terminología formativa y no estigmatizante)
+  let diagnosticoClima = 'Cohesión positiva y clima colaborativo'
+  if (indiceCohesion < 25) {
+    diagnosticoClima = 'Foco de atención prioritaria para mediación grupal'
+  } else if (indiceCohesion < 50) {
+    diagnosticoClima = 'Requiere fortalecimiento de vínculos formativos'
+  } else if (indiceCohesion < 75) {
+    diagnosticoClima = 'Cohesión moderada con dinámicas estables'
+  }
+
+  return {
+    indice_cohesion: indiceCohesion,
+    diagnostico_clima: diagnosticoClima,
+    tasa_integracion_pct: tasaIntegracionPct,
+  }
 }
 
 /**
@@ -112,7 +282,13 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
         total_estudiantes: 0,
         total_aristas_activas: 0,
         densidad_red: 0,
+        densidad_red_pct: 0,
+        coeficiente_agrupamiento_promedio: 0,
+        indice_cohesion: 100,
+        diagnostico_clima: 'Cohesión positiva y clima colaborativo',
+        tasa_integracion_pct: 100,
         estudiantes_aislados: 0,
+        conflictividad_global: 0,
         estudiantes_en_riesgo: [],
         pares_criticos: [],
         tiempo_ejecucion_ms: Number((tFin - tInicio).toFixed(2)),
@@ -295,9 +471,13 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
     }
   })
 
-  // 7. Calcular métricas por estudiante (nodos) y métricas globales del aula
+  // 7. Calcular métricas por estudiante (nodos) y análisis de redes (SNA)
   let totalConflictividadGlobal = 0
   let estudiantesAisladosCount = 0
+
+  // Centralidad de grado y agrupamiento local/global
+  const gradosSNA = calcularCentralidadGrado(matrizAdyacencia, n)
+  const agrupamientoSNA = calcularCoeficienteAgrupamiento(matrizAdyacencia, n)
 
   const nodes = listaEstudiantes.map((est, idx) => {
     let conflictividadTotal = 0
@@ -319,7 +499,7 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
       estudiantesAisladosCount++
     }
 
-    // Clasificación de estado de riesgo individual
+    // Clasificación de estado de riesgo individual (retrocompatibilidad)
     let estadoRiesgo = 'nulo'
     if (conflictividadTotal >= 8) estadoRiesgo = 'critico'
     else if (conflictividadTotal >= 4) estadoRiesgo = 'alto'
@@ -327,6 +507,23 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
     else if (conflictividadTotal === 1) estadoRiesgo = 'bajo'
     else if (conflictividadTotal === 0 && gradoCentralidad > 0) estadoRiesgo = 'neutro'
     else estadoRiesgo = 'nulo'
+
+    // Clasificación pedagógica formativa (no estigmatizante)
+    let nivelAcompanamiento = 'convivencia_positiva'
+    let clasificacionFormativa = 'Convivencia positiva y armónica'
+    if (conflictividadTotal >= 8) {
+      nivelAcompanamiento = 'prioritario'
+      clasificacionFormativa = 'Acompañamiento formativo prioritario'
+    } else if (conflictividadTotal >= 4) {
+      nivelAcompanamiento = 'apoyo_formativo'
+      clasificacionFormativa = 'Apoyo formativo focalizado'
+    } else if (conflictividadTotal >= 1) {
+      nivelAcompanamiento = 'observacion_preventiva'
+      clasificacionFormativa = 'Observación preventiva formativa'
+    }
+
+    const gradoInfo = gradosSNA[idx] || { grado: gradoCentralidad, centralidad_grado_pct: 0 }
+    const clusteringInfo = agrupamientoSNA.coeficientesLocales[idx] || { clustering_local_pct: 0, triangulos: 0 }
 
     return {
       id: est.id,
@@ -337,18 +534,35 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
       incidentes_count: incidentesCountPorNodo[idx],
       mediaciones_count: mediacionesCountPorNodo[idx],
       conflictividad_total: conflictividadTotal,
-      grado_centralidad: gradoCentralidad,
+      grado_centralidad: gradoInfo.grado,
+      centralidad_grado_pct: gradoInfo.centralidad_grado_pct,
+      coeficiente_agrupamiento_pct: clusteringInfo.clustering_local_pct,
+      triangulos_enlaces: clusteringInfo.triangulos,
       estado_riesgo: estadoRiesgo,
+      nivel_acompanamiento: nivelAcompanamiento,
+      clasificacion_formativa: clasificacionFormativa,
     }
   })
 
-  // 8. Métricas globales de la red de aula
+  // 8. Métricas globales de la red de aula y cohesión grupal
   const maxEnlacesPosibles = (n * (n - 1)) / 2
   const densidadRed = maxEnlacesPosibles > 0
     ? Number((links.length / maxEnlacesPosibles).toFixed(4))
     : 0
+  const densidadRedPct = Number((densidadRed * 100).toFixed(2))
 
-  // Top estudiantes en mayor riesgo (ordenados por conflictividad descendente)
+  const totalMediacionesRed = links.reduce((acc, l) => acc + (l.mediaciones_count || 0), 0)
+
+  const cohesionResult = calcularIndiceCohesion({
+    n,
+    aisladosCount: estudiantesAisladosCount,
+    coeficienteAgrupamientoPromedioPct: agrupamientoSNA.coeficienteAgrupamientoPromedioPct,
+    totalConflictividad: totalConflictividadGlobal,
+    mediacionesCount: totalMediacionesRed,
+    densidadRedPct,
+  })
+
+  // Top estudiantes en mayor acompañamiento formativo (ordenados por conflictividad descendente)
   const estudiantesEnRiesgo = nodes
     .filter((node) => node.conflictividad_total > 0)
     .sort((a, b) => b.conflictividad_total - a.conflictividad_total)
@@ -358,6 +572,8 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
       nombre: node.nombre,
       conflictividad: node.conflictividad_total,
       estado_riesgo: node.estado_riesgo,
+      nivel_acompanamiento: node.nivel_acompanamiento,
+      clasificacion_formativa: node.clasificacion_formativa,
     }))
 
   // Pares críticos (pares de estudiantes con mayor peso de conflicto)
@@ -396,6 +612,11 @@ const obtenerSociogramaPorCurso = async (tenantId, cursoId) => {
       total_estudiantes: n,
       total_aristas_activas: links.length,
       densidad_red: densidadRed,
+      densidad_red_pct: densidadRedPct,
+      coeficiente_agrupamiento_promedio: agrupamientoSNA.coeficienteAgrupamientoPromedioPct,
+      indice_cohesion: cohesionResult.indice_cohesion,
+      diagnostico_clima: cohesionResult.diagnostico_clima,
+      tasa_integracion_pct: cohesionResult.tasa_integracion_pct,
       estudiantes_aislados: estudiantesAisladosCount,
       conflictividad_global: totalConflictividadGlobal,
       estudiantes_en_riesgo: estudiantesEnRiesgo,
@@ -409,5 +630,8 @@ module.exports = {
   PONDERACION_PESOS,
   obtenerPesoPorGravedad,
   clasificarTipoVinculo,
+  calcularCentralidadGrado,
+  calcularCoeficienteAgrupamiento,
+  calcularIndiceCohesion,
   obtenerSociogramaPorCurso,
 }

@@ -485,4 +485,219 @@ describe('TASK 8.1.1.1 — Algoritmo de Co-ocurrencias y Matriz de Adyacencia Po
       expect(next).toHaveBeenCalledWith(errorForzado)
     })
   })
+
+  describe('TASK 8.1.2.1 — Análisis de Redes (SNA): Centralidad de Grado, Agrupamiento y Cohesión Grupal', () => {
+    describe('Criterio 1 y 3: Cálculo Matemático sobre Grafos Sintéticos Canónicos', () => {
+      it('Grafo Completo K4 (4 nodos, 6 aristas): cada nodo conectado a los demás', () => {
+        // En K4, cada nodo tiene grado 3, centralidad 100%, clustering 100%
+        const matrizK4 = [
+          [0, 1, 1, 1],
+          [1, 0, 1, 1],
+          [1, 1, 0, 1],
+          [1, 1, 1, 0],
+        ]
+
+        const centralidad = sociogramaService.calcularCentralidadGrado(matrizK4, 4)
+        expect(centralidad).toHaveLength(4)
+        centralidad.forEach((c) => {
+          expect(c.grado).toBe(3)
+          expect(c.centralidad_grado_pct).toBe(100) // (3 / 3) * 100
+        })
+
+        const agrupamiento = sociogramaService.calcularCoeficienteAgrupamiento(matrizK4, 4)
+        expect(agrupamiento.coeficientesLocales).toHaveLength(4)
+        agrupamiento.coeficientesLocales.forEach((cl) => {
+          expect(cl.clustering_local_pct).toBe(100)
+          expect(cl.triangulos).toBe(3) // Entre los 3 vecinos hay 3 aristas
+        })
+        expect(agrupamiento.coeficienteAgrupamientoPromedioPct).toBe(100)
+      })
+
+      it('Grafo Estrella S5 (5 nodos, 4 aristas): nodo 0 central conectado a 4 hojas', () => {
+        // Nodo 0: grado 4, centralidad 100%, vecinos sin aristas entre sí -> clustering 0%
+        // Nodos 1..4: grado 1, centralidad 25%, k < 2 -> clustering 0%
+        const matrizS5 = [
+          [0, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0],
+        ]
+
+        const centralidad = sociogramaService.calcularCentralidadGrado(matrizS5, 5)
+        expect(centralidad[0].grado).toBe(4)
+        expect(centralidad[0].centralidad_grado_pct).toBe(100) // 4 / 4 * 100
+
+        for (let i = 1; i <= 4; i++) {
+          expect(centralidad[i].grado).toBe(1)
+          expect(centralidad[i].centralidad_grado_pct).toBe(25) // 1 / 4 * 100
+        }
+
+        const agrupamiento = sociogramaService.calcularCoeficienteAgrupamiento(matrizS5, 5)
+        expect(agrupamiento.coeficienteAgrupamientoPromedioPct).toBe(0)
+        agrupamiento.coeficientesLocales.forEach((cl) => {
+          expect(cl.clustering_local_pct).toBe(0)
+        })
+      })
+
+      it('Grafo Ciclo C4 (4 nodos, 4 aristas en anillo): 0-1, 1-2, 2-3, 3-0', () => {
+        // Cada nodo tiene grado 2. Centralidad: 2/3 * 100 = 66.67%.
+        // Los dos vecinos de cada nodo no se conectan entre sí -> clustering = 0%
+        const matrizC4 = [
+          [0, 1, 0, 1],
+          [1, 0, 1, 0],
+          [0, 1, 0, 1],
+          [1, 0, 1, 0],
+        ]
+
+        const centralidad = sociogramaService.calcularCentralidadGrado(matrizC4, 4)
+        centralidad.forEach((c) => {
+          expect(c.grado).toBe(2)
+          expect(c.centralidad_grado_pct).toBe(66.67)
+        })
+
+        const agrupamiento = sociogramaService.calcularCoeficienteAgrupamiento(matrizC4, 4)
+        expect(agrupamiento.coeficienteAgrupamientoPromedioPct).toBe(0)
+      })
+
+      it('Grafo Triángulo con Hoja (4 nodos): 0-1, 1-2, 2-0 y nodo 3 conectado a 0', () => {
+        // Nodo 0: vecinos {1, 2, 3}. Entre 1 y 2 hay arista (1 triángulo). C_0 = (2 * 1) / (3 * 2) = 1/3 ~ 33.33%
+        // Nodos 1 y 2: vecinos {0, 2} y {0, 1}. Grado 2, arista entre vecinos = 1 -> C = 100%
+        // Nodo 3: grado 1 -> C = 0%
+        const matrizTrianguloHoja = [
+          [0, 1, 1, 1],
+          [1, 0, 1, 0],
+          [1, 1, 0, 0],
+          [1, 0, 0, 0],
+        ]
+
+        const agrupamiento = sociogramaService.calcularCoeficienteAgrupamiento(matrizTrianguloHoja, 4)
+        expect(agrupamiento.coeficientesLocales[0].clustering_local_pct).toBe(33.33)
+        expect(agrupamiento.coeficientesLocales[1].clustering_local_pct).toBe(100)
+        expect(agrupamiento.coeficientesLocales[2].clustering_local_pct).toBe(100)
+        expect(agrupamiento.coeficientesLocales[3].clustering_local_pct).toBe(0)
+
+        // Promedio: (0.3333 + 1 + 1 + 0) / 4 = 2.3333 / 4 = 0.5833 (58.33%)
+        expect(agrupamiento.coeficienteAgrupamientoPromedioPct).toBe(58.33)
+      })
+
+      it('Grafo Vacío (4 nodos, 0 aristas): sin interacciones', () => {
+        const matrizVacia = [
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+        ]
+
+        const centralidad = sociogramaService.calcularCentralidadGrado(matrizVacia, 4)
+        centralidad.forEach((c) => {
+          expect(c.grado).toBe(0)
+          expect(c.centralidad_grado_pct).toBe(0)
+        })
+
+        const agrupamiento = sociogramaService.calcularCoeficienteAgrupamiento(matrizVacia, 4)
+        expect(agrupamiento.coeficienteAgrupamientoPromedioPct).toBe(0)
+      })
+    })
+
+    describe('Criterio 1: Indicadores Normalizados de 0 a 100 para Cohesión de Aula', () => {
+      it('calcularIndiceCohesion debe retornar escala estricta [0, 100] y diagnóstico pedagógico', () => {
+        // Caso 1: Curso ideal sin conflictos
+        const casoIdeal = sociogramaService.calcularIndiceCohesion({
+          n: 20,
+          aisladosCount: 0,
+          coeficienteAgrupamientoPromedioPct: 50,
+          totalConflictividad: 0,
+          mediacionesCount: 0,
+        })
+        expect(casoIdeal.indice_cohesion).toBe(100)
+        expect(casoIdeal.diagnostico_clima).toBe('Cohesión positiva y clima colaborativo')
+
+        // Caso 2: Curso con conflicto moderado y mediaciones formativas
+        const casoModerado = sociogramaService.calcularIndiceCohesion({
+          n: 20,
+          aisladosCount: 2,
+          coeficienteAgrupamientoPromedioPct: 30,
+          totalConflictividad: 15,
+          mediacionesCount: 2,
+        })
+        expect(casoModerado.indice_cohesion).toBeGreaterThanOrEqual(0)
+        expect(casoModerado.indice_cohesion).toBeLessThanOrEqual(100)
+        expect(typeof casoModerado.diagnostico_clima).toBe('string')
+
+        // Caso 3: Curso en estado crítico de alta tensión
+        const casoCritico = sociogramaService.calcularIndiceCohesion({
+          n: 10,
+          aisladosCount: 8,
+          coeficienteAgrupamientoPromedioPct: 0,
+          totalConflictividad: 80,
+          mediacionesCount: 0,
+        })
+        expect(casoCritico.indice_cohesion).toBeLessThan(35)
+      })
+
+      it('obtenerSociogramaPorCurso debe incluir metricas de cohesion_aula, agrupamiento y centralidad normalizada', async () => {
+        configurarMockSupabase({
+          curso: mockCurso,
+          estudiantes: mockEstudiantes,
+        })
+
+        const resultado = await sociogramaService.obtenerSociogramaPorCurso(tenantId, cursoId)
+
+        expect(resultado.metricas).toHaveProperty('indice_cohesion')
+        expect(resultado.metricas).toHaveProperty('coeficiente_agrupamiento_promedio')
+        expect(resultado.metricas).toHaveProperty('densidad_red_pct')
+        expect(resultado.metricas).toHaveProperty('diagnostico_clima')
+        expect(resultado.metricas).toHaveProperty('tasa_integracion_pct')
+
+        expect(resultado.metricas.indice_cohesion).toBeGreaterThanOrEqual(0)
+        expect(resultado.metricas.indice_cohesion).toBeLessThanOrEqual(100)
+
+        // Cada nodo debe tener sus indicadores normalizados
+        resultado.nodes.forEach((nodo) => {
+          expect(nodo).toHaveProperty('centralidad_grado_pct')
+          expect(nodo).toHaveProperty('coeficiente_agrupamiento_pct')
+          expect(nodo.centralidad_grado_pct).toBeGreaterThanOrEqual(0)
+          expect(nodo.centralidad_grado_pct).toBeLessThanOrEqual(100)
+          expect(nodo.coeficiente_agrupamiento_pct).toBeGreaterThanOrEqual(0)
+          expect(nodo.coeficiente_agrupamiento_pct).toBeLessThanOrEqual(100)
+        })
+      })
+    })
+
+    describe('Criterio 2: Protección Ética — No Expone Datos Sensibles ni Etiquetas Estigmatizantes', () => {
+      it('los nodos no deben contener etiquetas peyorativas ni estigmatizantes ("agresor", "matón", "problemático", "víctima")', async () => {
+        const incGrave = { id: 'inc-1', folio: 'INC-1', gravedad: 'Grave', fecha_incidente: '2026-04-01' }
+
+        configurarMockSupabase({
+          curso: mockCurso,
+          estudiantes: [est1, est2],
+          incidentes: [incGrave],
+          incidenteEstudiantes: [
+            { incidente_id: 'inc-1', estudiante_id: est1.id, rol: 'involucrado' },
+            { incidente_id: 'inc-1', estudiante_id: est2.id, rol: 'involucrado' },
+          ],
+        })
+
+        const resultado = await sociogramaService.obtenerSociogramaPorCurso(tenantId, cursoId)
+
+        const terminosProhibidos = ['agresor', 'maton', 'matón', 'problematico', 'problemático', 'toxico', 'tóxico', 'victima', 'víctima', 'conflictivo']
+
+        resultado.nodes.forEach((nodo) => {
+          // Verificar valores pedagógicos no estigmatizantes
+          expect(nodo).toHaveProperty('nivel_acompanamiento')
+          expect(nodo).toHaveProperty('clasificacion_formativa')
+
+          const valoresTexto = JSON.stringify(nodo).toLowerCase()
+          terminosProhibidos.forEach((termino) => {
+            expect(valoresTexto).not.toContain(`"${termino}"`)
+          })
+
+          // No debe exponer datos de salud ni diagnóstico PIE
+          expect(nodo).not.toHaveProperty('diagnostico_pie')
+          expect(nodo).not.toHaveProperty('evaluacion_psicosocial')
+        })
+      })
+    })
+  })
 })
