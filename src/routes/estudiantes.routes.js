@@ -13,6 +13,7 @@ const {
 } = require('../controllers/estudiantesController')
 const {
   obtenerExpedienteSaludHandler,
+  descargarFichaSaludPdfHandler,
 } = require('../controllers/reporteEspecialistaController')
 
 
@@ -78,6 +79,14 @@ router.get(
   '/:id/expediente-salud',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
   obtenerExpedienteSaludHandler
+)
+
+// Ficha médica/psicológica oficial en PDF (2 páginas con hash SHA-256) (TASK 8.2.1.2)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/ficha-medica-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  descargarFichaSaludPdfHandler
 )
 
 
