@@ -392,6 +392,176 @@ const extraerExpedienteEspecialistaSalud = async (
   }
 }
 
+/**
+ * Registra formalmente la emisión de una ficha/informe médico en la tabla estudiante_informes_medicos.
+ *
+ * @param {Object} params
+ * @param {string} params.tenantId - UUID del establecimiento
+ * @param {string} params.estudianteId - UUID del estudiante
+ * @param {string} [params.usuarioEmisorId] - UUID del usuario emisor
+ * @param {string} params.especialistaDestino - Nombre o centro del especialista de salud
+ * @param {string} [params.motivo] - Motivo formal de derivación o emisión
+ * @param {string} [params.notas] - Observaciones o notas adicionales
+ * @param {string} params.hashSha256 - Hash SHA-256 inmutable de certificación
+ * @param {number} [params.totalIncidentes=0] - Cantidad de incidentes incluidos
+ * @param {number} [params.totalMediaciones=0] - Cantidad de mediaciones incluidas
+ * @returns {Promise<Object>} Registro insertado
+ */
+const registrarEmisionInformeMedico = async ({
+  tenantId,
+  estudianteId,
+  usuarioEmisorId,
+  especialistaDestino,
+  motivo = null,
+  notas = null,
+  hashSha256,
+  totalIncidentes = 0,
+  totalMediaciones = 0,
+}) => {
+  if (!tenantId || !estudianteId || !hashSha256 || !especialistaDestino) {
+    const error = new Error('Parámetros obligatorios faltantes para registrar el informe médico')
+    error.status = 400
+    throw error
+  }
+
+  const { data, error } = await supabase
+    .from('estudiante_informes_medicos')
+    .insert({
+      tenant_id: tenantId,
+      estudiante_id: estudianteId,
+      usuario_emisor_id: usuarioEmisorId || null,
+      especialista_destino: especialistaDestino,
+      motivo,
+      notas,
+      hash_sha256: hashSha256,
+      total_incidentes_incluidos: totalIncidentes,
+      total_mediaciones_incluidas: totalMediaciones,
+      fecha_emision: new Date().toISOString(),
+    })
+    .select(`
+      id,
+      tenant_id,
+      estudiante_id,
+      usuario_emisor_id,
+      especialista_destino,
+      motivo,
+      notas,
+      hash_sha256,
+      total_incidentes_incluidos,
+      total_mediaciones_incluidas,
+      fecha_emision,
+      created_at
+    `)
+    .single()
+
+  if (error) {
+    logger.error('Error al registrar informe médico en BD:', error)
+    throw error
+  }
+
+  return data
+}
+
+/**
+ * Consulta el historial de informes médicos y fichas emitidas para un estudiante con paginación.
+ *
+ * @param {Object} params
+ * @param {string} params.tenantId - UUID del establecimiento
+ * @param {string} params.estudianteId - UUID del estudiante
+ * @param {number} [params.page=1] - Número de página (1-based)
+ * @param {number} [params.limit=10] - Cantidad de registros por página
+ * @returns {Promise<Object>} { estudiante, items, pagination }
+ */
+const listarInformesMedicosEstudiante = async ({
+  tenantId,
+  estudianteId,
+  page = 1,
+  limit = 10,
+}) => {
+  if (!tenantId) {
+    const error = new Error('tenant_id es requerido')
+    error.status = 400
+    throw error
+  }
+  if (!estudianteId) {
+    const error = new Error('estudianteId es requerido')
+    error.status = 400
+    throw error
+  }
+
+  const paginaNum = Math.max(1, parseInt(page, 10) || 1)
+  const limiteNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10))
+  const desde = (paginaNum - 1) * limiteNum
+  const hasta = desde + limiteNum - 1
+
+  // 1. Validar que el estudiante exista y pertenezca al tenant
+  const { data: estudiante, error: estErr } = await supabase
+    .from('estudiantes')
+    .select('id, nombre, apellido, rut, curso_id')
+    .eq('id', estudianteId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (estErr || !estudiante) {
+    const error = new Error('Estudiante no encontrado en el establecimiento')
+    error.status = 404
+    throw error
+  }
+
+  // 2. Consulta paginada con recuento total y datos del usuario emisor
+  const { data, count, error } = await supabase
+    .from('estudiante_informes_medicos')
+    .select(`
+      id,
+      tenant_id,
+      estudiante_id,
+      usuario_emisor_id,
+      especialista_destino,
+      motivo,
+      notas,
+      hash_sha256,
+      total_incidentes_incluidos,
+      total_mediaciones_incluidas,
+      fecha_emision,
+      created_at,
+      usuarios:usuario_emisor_id (
+        id,
+        nombre,
+        email,
+        rol
+      )
+    `, { count: 'exact' })
+    .eq('estudiante_id', estudianteId)
+    .eq('tenant_id', tenantId)
+    .order('fecha_emision', { ascending: false })
+    .range(desde, hasta)
+
+  if (error) {
+    logger.error('Error al consultar historial de informes médicos:', error)
+    throw error
+  }
+
+  const total = count || 0
+  const totalPages = Math.ceil(total / limiteNum) || 1
+
+  return {
+    estudiante: {
+      id: estudiante.id,
+      nombre_completo: `${estudiante.nombre} ${estudiante.apellido}`.trim(),
+      rut: estudiante.rut,
+    },
+    items: data || [],
+    pagination: {
+      total,
+      page: paginaNum,
+      limit: limiteNum,
+      totalPages,
+      hasNextPage: paginaNum < totalPages,
+      hasPrevPage: paginaNum > 1,
+    },
+  }
+}
+
 module.exports = {
   REGEX_RUT,
   REGEX_EMAIL,
@@ -400,4 +570,6 @@ module.exports = {
   convertirAIniciales,
   anonimizarRelatoConIniciales,
   extraerExpedienteEspecialistaSalud,
+  registrarEmisionInformeMedico,
+  listarInformesMedicosEstudiante,
 }

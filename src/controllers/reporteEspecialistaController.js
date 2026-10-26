@@ -68,6 +68,23 @@ const descargarFichaSaludPdfHandler = async (req, res, next) => {
     const hashInmutable = pdfFichaEspecialistaService.calcularHashFichaSalud(expediente)
     const rutLimpio = (expediente.estudiante_evaluado?.rut || 'estudiante').replace(/\./g, '')
 
+    // Registro automático de la emisión en estudiante_informes_medicos
+    try {
+      await reporteEspecialistaService.registrarEmisionInformeMedico({
+        tenantId,
+        estudianteId,
+        usuarioEmisorId: req.user.id || req.user.user_id,
+        especialistaDestino: opciones.especialistaDestino,
+        motivo: opciones.motivo,
+        notas: req.query?.notas || null,
+        hashSha256: hashInmutable,
+        totalIncidentes: expediente.incidentes?.length || 0,
+        totalMediaciones: expediente.mediaciones?.length || 0,
+      })
+    } catch (regErr) {
+      logger.warn('Advertencia: no se pudo persistir emisión en estudiante_informes_medicos:', regErr.message)
+    }
+
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="ficha-salud-${rutLimpio}.pdf"`)
     res.setHeader('Content-Length', pdfBuffer.length)
@@ -80,7 +97,40 @@ const descargarFichaSaludPdfHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/estudiantes/:id/informes-medicos
+ * GET /api/estudiantes/:id/informes-medicos
+ *
+ * Consulta el historial paginado de informes médicos y fichas emitidas para el estudiante.
+ * Exclusivo para roles Directivos y Psicosociales (Administrador, Directivo, Equipo de Formación).
+ */
+const listarInformesMedicosEstudianteHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const estudianteId = req.params.id || req.params.estudianteId
+    const { page, limit } = req.query
+
+    const resultado = await reporteEspecialistaService.listarInformesMedicosEstudiante({
+      tenantId,
+      estudianteId,
+      page,
+      limit,
+    })
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Historial de informes médicos recuperado exitosamente',
+      data: resultado,
+      ...resultado,
+    })
+  } catch (err) {
+    logger.error('Error en listarInformesMedicosEstudianteHandler:', err)
+    next(err)
+  }
+}
+
 module.exports = {
   obtenerExpedienteSaludHandler,
   descargarFichaSaludPdfHandler,
+  listarInformesMedicosEstudianteHandler,
 }

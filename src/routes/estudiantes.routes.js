@@ -14,6 +14,7 @@ const {
 const {
   obtenerExpedienteSaludHandler,
   descargarFichaSaludPdfHandler,
+  listarInformesMedicosEstudianteHandler,
 } = require('../controllers/reporteEspecialistaController')
 
 
@@ -87,6 +88,14 @@ router.get(
   '/:id/ficha-medica-pdf',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
   descargarFichaSaludPdfHandler
+)
+
+// Historial paginado de informes médicos y fichas emitidas para salud (TASK 8.2.2.1)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/informes-medicos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  listarInformesMedicosEstudianteHandler
 )
 
 
