@@ -12,6 +12,7 @@ const {
   evaluarCompromisosSchema,
   cerrarMediacionSchema,
 } = require('../schemas/mediacionesSchemas')
+const { calcularVersionDocumental } = require('./mediacionesDocumentosService')
 
 // =============================================================================
 // MÓDULO DE SERVICIOS: MEDIACIÓN ESCOLAR Y ACUERDOS FORMATIVOS (SPRINT 7 / ÉPICA 7.2)
@@ -198,7 +199,7 @@ const listarMediaciones = async (tenantId, queryParams = {}) => {
       conclusiones_cierre,
       created_at,
       updated_at,
-      usuarios ( id, nombre, apellido, email ),
+      usuarios:usuarios!mediaciones_mediador_id_fkey ( id, nombre, apellido, email ),
       mediacion_participantes (
 
         id,
@@ -277,7 +278,7 @@ const obtenerMediacionPorId = async (tenantId, id) => {
       created_at,
       updated_at,
       incidente_id,
-      usuarios ( id, nombre, apellido, email ),
+      usuarios:usuarios!mediaciones_mediador_id_fkey ( id, nombre, apellido, email ),
       mediacion_participantes (
         id,
         estudiante_id,
@@ -332,6 +333,8 @@ const obtenerMediacionPorId = async (tenantId, id) => {
     throw err
   }
 
+  // Capacidad documental activa: calcular version_documental determinista
+  data.version_documental = calcularVersionDocumental(data)
 
   return data
 }
@@ -969,7 +972,7 @@ const obtenerHistorialMediacionesEstudiante = async (tenantId, estudianteId) => 
         fecha_seguimiento,
         conclusiones_cierre,
         cerrada_at,
-        usuarios:mediador_id ( id, nombre, apellido, email ),
+        usuarios:usuarios!mediaciones_mediador_id_fkey ( id, nombre, apellido, email ),
         mediacion_compromisos (*)
       )
     `)

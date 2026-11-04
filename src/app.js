@@ -99,6 +99,10 @@ app.use('/api/health', (req, res) => res.status(200).json({
   data: { timestamp: new Date().toISOString() },
 }))
 
+// Citaciones: Rutas públicas para confirmación móvil de apoderados (sin autenticación previa)
+app.use('/api/v1/citaciones/public', require('./routes/citacionesPublic.routes'))
+app.use('/api/citaciones/public', require('./routes/citacionesPublic.routes'))
+
 // =============================================================================
 // MIDDLEWARES GLOBALES PARA RUTAS PRIVADAS
 // Todas las rutas debajo de este punto requieren token válido y tenant_id

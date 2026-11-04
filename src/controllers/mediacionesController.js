@@ -1,6 +1,11 @@
 const mediacionesService = require('../services/mediacionesService')
 const pdfMediacionService = require('../services/pdfMediacionService')
 const emailServiceMediacion = require('../services/emailServiceMediacion')
+const {
+  listarDocumentosMediacionService,
+  subirDocumentoMediacionService,
+  descargarDocumentoMediacionService,
+} = require('../services/mediacionesDocumentosService')
 const logger = require('../utils/logger')
 
 /**
@@ -276,6 +281,81 @@ const historialEstudianteHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/mediaciones/:id/documentos
+ * Retorna la lista de firmas y actas físicas asociadas al expediente.
+ */
+const listarDocumentosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const data = await listarDocumentosMediacionService(tenantId, id)
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en listarDocumentosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * POST /api/v1/mediaciones/:id/documentos
+ * Sube una firma manuscrita o un acta física firmada en PDF.
+ */
+const subirDocumentoHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await subirDocumentoMediacionService(
+      tenantId,
+      id,
+      usuarioId,
+      req.file,
+      req.body
+    )
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Documento guardado exitosamente en el expediente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en subirDocumentoHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/documentos/:documentoId
+ * Descarga el archivo binario (PNG o PDF) de una firma o acta física.
+ */
+const descargarDocumentoHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id, documentoId } = req.params
+
+    const { buffer, mime_type, nombre_archivo } = await descargarDocumentoMediacionService(
+      tenantId,
+      id,
+      documentoId
+    )
+
+    res.setHeader('Content-Type', mime_type)
+    res.setHeader('Content-Disposition', `attachment; filename="${nombre_archivo}"`)
+    res.setHeader('Content-Length', buffer.length)
+    res.send(buffer)
+  } catch (err) {
+    logger.error('Error en descargarDocumentoHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
@@ -288,4 +368,7 @@ module.exports = {
   evaluarCompromisosHandler,
   cerrarMediacionHandler,
   historialEstudianteHandler,
+  listarDocumentosHandler,
+  subirDocumentoHandler,
+  descargarDocumentoHandler,
 }

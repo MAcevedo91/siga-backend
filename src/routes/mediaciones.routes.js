@@ -1,5 +1,6 @@
 const { Router } = require('express')
 const requireRole = require('../middlewares/requireRole')
+const { uploadMediacionDocumento } = require('../middlewares/uploadMediacionDocumento')
 const {
   crearHandler,
   listarHandler,
@@ -12,6 +13,9 @@ const {
   evaluarCompromisosHandler,
   cerrarMediacionHandler,
   historialEstudianteHandler,
+  listarDocumentosHandler,
+  subirDocumentoHandler,
+  descargarDocumentoHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -97,6 +101,32 @@ router.put(
   '/:id/compromisos',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
   guardarCompromisosHandler
+)
+
+// =============================================================================
+// GESTIÓN DOCUMENTAL DE MEDIACIÓN: FIRMAS DIGITALES Y ACTAS FÍSICAS (SPRINT 9)
+// =============================================================================
+
+// Listar documentos y firmas de una mediación
+router.get(
+  '/:id/documentos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  listarDocumentosHandler
+)
+
+// Subir firma digital o acta física firmada (máximo 5 MB, PNG o PDF)
+router.post(
+  '/:id/documentos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  uploadMediacionDocumento,
+  subirDocumentoHandler
+)
+
+// Descargar archivo binario de firma o acta física
+router.get(
+  '/:id/documentos/:documentoId',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  descargarDocumentoHandler
 )
 
 module.exports = router

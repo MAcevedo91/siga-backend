@@ -172,7 +172,7 @@ const obtenerPerfil = async (id, tenantId) => {
   const { data: estudiante, error } = await supabase
     .from('estudiantes')
     .select(`
-      id, tenant_id, rut, nombre, apellido,
+      id, tenant_id, rut, nombre, apellido, curso_id,
       fecha_nacimiento, activo, estado_matricula, es_pie, direccion,
       cursos ( id, nombre, nivel, anio_academico )
     `)
@@ -246,8 +246,15 @@ const obtenerPerfil = async (id, tenantId) => {
   const listaApoderados = apoderados || []
   const apoderadoTitular = listaApoderados.find(a => a.es_titular) || listaApoderados[0] || null
 
+  // Normalizar objeto de curso (soporte objeto directo o array de PostgREST)
+  const cursoObj =
+    estudiante.curso ||
+    (Array.isArray(estudiante.cursos) ? estudiante.cursos[0] : estudiante.cursos) ||
+    null
+
   return {
     ...estudiante,
+    curso: cursoObj,
     estado_matricula: estudiante.estado_matricula || (estudiante.activo ? 'Regular' : 'Retirado'),
     apoderado: apoderadoTitular,
     apoderados: listaApoderados,
