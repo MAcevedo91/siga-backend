@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acta Oficial de Entrevista y Compromisos Pedagógicos Familia-Escuela</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 25px 0;">
+    <tr>
+      <td align="center">
+        <table width="620" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); overflow: hidden;">
+          
+          <!-- Header Oficial Institucional -->
+          <tr>
+            <td style="background-color: #1e3a5f; padding: 30px 25px; text-align: center; border-bottom: 4px solid #2563eb;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">ESCUELA COEDUCACIONAL N° 1 EL SALVADOR</h1>
+              <p style="color: #93c5fd; margin: 6px 0 0 0; font-size: 13px;">RBD: 9876-5 — Alianza Familia-Escuela y Colaboración Formativa</p>
+            </td>
+          </tr>
+
+          <!-- Cuerpo del Mensaje -->
+          <tr>
+            <td style="padding: 30px 30px 20px 30px;">
+              <p style="font-size: 15px; margin: 0 0 15px 0; color: #0f172a;">
+                Estimado/a <strong>{{destinatarioNombre}}</strong> ({{rolDestinatario}}),
+              </p>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+                Junto con saludarle cordialmente, mediante la presente comunicación formal remitimos la copia digital del <strong>Acta Oficial de Entrevista y Compromisos Mutuos</strong> correspondiente a la citación formativa del estudiante: <strong>{{estudianteNombre}}</strong> ({{cursoNombre}}).
+              </p>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+                Este encuentro ha sellado una alianza de corresponsabilidad entre la escuela y el hogar, estableciendo compromisos mutuos en favor del desarrollo pedagógico y socioemocional del estudiante, bajo el marco de la <strong>Circular N° 482 de la Superintendencia de Educación</strong>.
+              </p>
+
+              <!-- Tarjeta Resumen del Expediente -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin: 0 0 25px 0;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Folio Oficial:</strong> {{folio}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Fecha de Reunión:</strong> {{fechaEntrevista}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Docente/Directivo a Cargo:</strong> {{docenteNombre}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Propósito Formativo:</strong> {{motivoCategoria}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Fecha de Próximo Seguimiento:</strong> {{fechaSeguimiento}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Aviso de Documento Adjunto -->
+              <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; margin: 0 0 25px 0; border-radius: 0 4px 4px 0;">
+                <p style="margin: 0; font-size: 13px; color: #1e40af; font-weight: 600;">
+                  📎 Documento Oficial Adjunto: {{filename}}
+                </p>
+                <p style="margin: 4px 0 0 0; font-size: 12px; color: #3b82f6;">
+                  Encontrará adjunta el Acta Oficial en formato PDF con la tabla comparativa de compromisos suscritos y los cuadrantes de firma formal.
+                </p>
+              </div>
+
+              <!-- Certificación Forense -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; margin: 0 0 20px 0;">
+                <tr>
+                  <td style="padding: 10px 14px; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #475569; word-break: break-all;">
+                    <strong>Certificación Digital SHA-256:</strong><br>
+                    {{hashSha256}}
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 10px 0;">
+                Agradecemos profundamente su valioso compromiso y asistencia. La colaboración entre la familia y la escuela es el pilar fundamental para el aprendizaje integral de nuestros alumnos.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer Institucional -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; font-size: 12px; color: #64748b;">
+                Escuela Coeducacional N° 1 El Salvador · Av. El Salvador s/n, Diego de Almagro
+              </p>
+              <p style="margin: 4px 0 0 0; font-size: 11px; color: #94a3b8;">
+                Sistema Integral de Gestión y Acompañamiento Escolar (SIGA Escolar) · Mensaje emitido automáticamente.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

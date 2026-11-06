@@ -39,6 +39,10 @@ function renderActaMediacionOficialTemplate(data) {
   return renderTemplate('acta-mediacion-oficial', data)
 }
 
+function renderActaCitacionOficialTemplate(data) {
+  return renderTemplate('acta-citacion-oficial', data)
+}
+
 module.exports = {
   renderIncidenteGraveTemplate,
   renderProtocoloAbiertoTemplate,
@@ -46,5 +50,6 @@ module.exports = {
   renderInformeOficialApoderadoTemplate,
   renderAvisoMediacionApoderadoTemplate,
   renderActaMediacionOficialTemplate,
+  renderActaCitacionOficialTemplate,
 }
 
