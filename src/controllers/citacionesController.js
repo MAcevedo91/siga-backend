@@ -80,9 +80,54 @@ const responderCitacionPublicaHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * POST /api/v1/citaciones/:id/acuerdos y POST /api/citaciones/:id/acuerdos
+ * Registra los acuerdos mutuos y cierra formalmente la entrevista formativa (TASK 10.2.3).
+ */
+const registrarAcuerdosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const userId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await citacionesService.registrarAcuerdosMutuos(tenantId, id, userId, req.body)
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Acuerdos mutuos registrados y acta oficial emitida exitosamente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en registrarAcuerdosHandler:', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/citaciones/:id/acta-pdf y GET /api/citaciones/:id/acta-pdf
+ * Descarga el Buffer binario del Acta Oficial de Citación con membrete y código SHA-256 (TASK 10.2.3).
+ */
+const descargarActaPdfHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const { pdfBuffer, folio } = await citacionesService.obtenerActaCitacionPDF(tenantId, id)
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="Acta_Citacion_${folio}.pdf"`)
+    res.status(200).send(pdfBuffer)
+  } catch (err) {
+    logger.error('Error en descargarActaPdfHandler:', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearCitacionHandler,
   listarCitacionesHandler,
   obtenerCitacionPublicaHandler,
   responderCitacionPublicaHandler,
+  registrarAcuerdosHandler,
+  descargarActaPdfHandler,
 }

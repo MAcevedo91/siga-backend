@@ -123,6 +123,27 @@ const tokenParamSchema = z.object({
   token: z.string().uuid('El token debe ser un UUID válido'),
 })
 
+/**
+ * Esquema para registrar acuerdos mutuos y cerrar la entrevista (TASK 10.2.3)
+ */
+const registrarAcuerdosSchema = z.object({
+  compromisos_colegio: z
+    .array(
+      z.string().trim().min(3, 'Cada compromiso del colegio debe tener al menos 3 caracteres')
+    )
+    .min(1, 'Debe registrar al menos un compromiso por parte del colegio'),
+  compromisos_apoderado: z
+    .array(
+      z.string().trim().min(3, 'Cada compromiso del apoderado debe tener al menos 3 caracteres')
+    )
+    .min(1, 'Debe registrar al menos un compromiso por parte del apoderado'),
+  fecha_proximo_seguimiento: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha_proximo_seguimiento debe tener formato YYYY-MM-DD')
+    .optional()
+    .nullable(),
+})
+
 module.exports = {
   MOTIVOS_VALIDOS,
   MODALIDADES_VALIDAS,
@@ -131,4 +152,5 @@ module.exports = {
   crearCitacionSchema,
   responderCitacionPublicaSchema,
   tokenParamSchema,
+  registrarAcuerdosSchema,
 }

@@ -7,7 +7,13 @@ const {
   crearCitacionSchema,
   responderCitacionPublicaSchema,
   tokenParamSchema,
+  registrarAcuerdosSchema,
 } = require('../schemas/citacionesValidations')
+const {
+  generarActaCitacionPDF,
+  calcularHashActaCitacion,
+} = require('./pdfCitacionActaService')
+const { despacharActaOficialCitacion } = require('./emailServiceCitacion')
 
 // Ventana de bloqueo por traslape horario: 45 minutos
 const VENTANA_TRASLAPE_MINUTOS = 45
@@ -469,10 +475,239 @@ const listarCitaciones = async (tenantId, query = {}) => {
   }
 }
 
+/**
+ * Registra los acuerdos mutuos y cierra formalmente la entrevista de citación (TASK 10.2.3).
+ *
+ * @param {string} tenantId - UUID del colegio
+ * @param {string} citacionId - UUID de la citación
+ * @param {string} userId - UUID del usuario que registra
+ * @param {Object} body - { compromisos_colegio, compromisos_apoderado, fecha_proximo_seguimiento }
+ * @returns {Promise<Object>} Acuerdos creados y citación actualizada
+ */
+const registrarAcuerdosMutuos = async (tenantId, citacionId, userId, body) => {
+  const parseResult = registrarAcuerdosSchema.safeParse(body)
+  if (!parseResult.success) {
+    const issues = parseResult.error.issues || parseResult.error.errors || []
+    const err = new Error(issues.map((i) => i.message).join('. '))
+    err.statusCode = 400
+    throw err
+  }
+
+  const { compromisos_colegio, compromisos_apoderado, fecha_proximo_seguimiento } = parseResult.data
+
+  // 1. Obtener la citación con sus datos completos (estudiante, curso, apoderado, docente)
+  const { data: citacion, error: citError } = await supabase
+    .from('citaciones_formativas')
+    .select(
+      `
+      id,
+      tenant_id,
+      folio,
+      motivo_categoria,
+      motivo_detalle,
+      fecha_hora_programada,
+      lugar_entrevista,
+      modalidad,
+      enlace_virtual,
+      estado,
+      estudiantes (
+        id,
+        nombre,
+        apellido,
+        rut,
+        curso_id,
+        cursos (
+          id,
+          nombre,
+          profesor_jefe_id,
+          profesores_jefes:usuarios!cursos_profesor_jefe_id_fkey ( id, nombre, apellido, email )
+        )
+      ),
+      apoderados ( id, nombre, apellido, email, telefono, relacion ),
+      usuarios!citaciones_formativas_docente_id_fkey ( id, nombre, apellido, email )
+    `
+    )
+    .eq('id', citacionId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (citError || !citacion) {
+    const err = new Error('Citación no encontrada en este establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  if (citacion.estado === 'cancelada') {
+    const err = new Error('No se pueden registrar acuerdos para una citación cancelada')
+    err.statusCode = 400
+    throw err
+  }
+
+  // 2. Calcular hash SHA-256 de los acuerdos
+  const payloadAcuerdos = {
+    compromisos_colegio,
+    compromisos_apoderado,
+    fecha_proximo_seguimiento: fecha_proximo_seguimiento || null,
+  }
+  const hash_sha256 = calcularHashActaCitacion(citacion, payloadAcuerdos)
+
+  // 3. Insertar o actualizar acuerdos en la base de datos
+  const { data: acuerdos, error: acuerdosError } = await supabase
+    .from('citacion_acuerdos_mutuos')
+    .upsert(
+      {
+        citacion_id: citacionId,
+        tenant_id: tenantId,
+        compromisos_colegio,
+        compromisos_apoderado,
+        fecha_proximo_seguimiento: fecha_proximo_seguimiento || null,
+        hash_sha256,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'citacion_id' }
+    )
+    .select('*')
+    .single()
+
+  if (acuerdosError) {
+    logger.error('Error al persistir citacion_acuerdos_mutuos en Supabase:', acuerdosError)
+    const err = new Error('Error al registrar acuerdos mutuos en base de datos')
+    err.statusCode = 500
+    throw err
+  }
+
+  // 4. Actualizar estado de la citación a 'realizada'
+  const { data: citacionActualizada, error: updateError } = await supabase
+    .from('citaciones_formativas')
+    .update({
+      estado: 'realizada',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', citacionId)
+    .eq('tenant_id', tenantId)
+    .select('id, folio, estado')
+    .single()
+
+  if (updateError) {
+    logger.warn('Advertencia: Falló actualización de estado de citación a realizada:', updateError.message)
+  }
+
+  // 5. Compilar buffer del PDF oficial
+  let bufferPdf = null
+  try {
+    bufferPdf = await generarActaCitacionPDF(citacion, acuerdos)
+  } catch (pdfErr) {
+    logger.error('Error al generar Buffer PDF del Acta de Citación:', pdfErr)
+  }
+
+  // 6. Despachar copias automáticas por correo
+  if (bufferPdf) {
+    try {
+      await despacharActaOficialCitacion(citacionId, tenantId, bufferPdf, acuerdos)
+    } catch (mailErr) {
+      logger.warn('Advertencia: No se pudo despachar el correo de acuerdos:', mailErr.message)
+    }
+  }
+
+  // 7. Registro de Auditoría
+  try {
+    await registrarAuditoria({
+      tenantId,
+      userId,
+      accion: 'CIERRE_CITACION_ACUERDOS',
+      tabla: 'citacion_acuerdos_mutuos',
+      registroId: acuerdos.id,
+      datosBefore: { estado_anterior: citacion.estado },
+      datosAfter: {
+        folio: citacion.folio,
+        hash_sha256,
+        cant_compromisos_colegio: compromisos_colegio.length,
+        cant_compromisos_apoderado: compromisos_apoderado.length,
+        fecha_proximo_seguimiento,
+      },
+    })
+  } catch (auditErr) {
+    logger.warn('Advertencia al auditar acuerdos de citación:', auditErr.message)
+  }
+
+  return {
+    acuerdos,
+    citacion: citacionActualizada || { id: citacionId, folio: citacion.folio, estado: 'realizada' },
+    hash_sha256,
+  }
+}
+
+/**
+ * Obtiene el Buffer binario del Acta Oficial PDF de una citación con acuerdos registrados (TASK 10.2.3).
+ *
+ * @param {string} tenantId - UUID del colegio
+ * @param {string} citacionId - UUID de la citación
+ * @returns {Promise<{ pdfBuffer: Buffer, folio: string }>}
+ */
+const obtenerActaCitacionPDF = async (tenantId, citacionId) => {
+  const { data: citacion, error: citError } = await supabase
+    .from('citaciones_formativas')
+    .select(
+      `
+      id,
+      tenant_id,
+      folio,
+      motivo_categoria,
+      motivo_detalle,
+      fecha_hora_programada,
+      lugar_entrevista,
+      modalidad,
+      enlace_virtual,
+      estado,
+      estudiantes (
+        id,
+        nombre,
+        apellido,
+        rut,
+        curso_id,
+        cursos ( id, nombre )
+      ),
+      apoderados ( id, nombre, apellido, email, telefono, relacion ),
+      usuarios!citaciones_formativas_docente_id_fkey ( id, nombre, apellido, email )
+    `
+    )
+    .eq('id', citacionId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (citError || !citacion) {
+    const err = new Error('Citación no encontrada')
+    err.statusCode = 404
+    throw err
+  }
+
+  const { data: acuerdos, error: acError } = await supabase
+    .from('citacion_acuerdos_mutuos')
+    .select('*')
+    .eq('citacion_id', citacionId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (acError || !acuerdos) {
+    const err = new Error('Esta citación no cuenta con acuerdos registrados ni acta oficial emitida')
+    err.statusCode = 404
+    throw err
+  }
+
+  const pdfBuffer = await generarActaCitacionPDF(citacion, acuerdos)
+
+  return {
+    pdfBuffer,
+    folio: citacion.folio || 'formativa',
+  }
+}
+
 module.exports = {
   validarDisponibilidadDocente,
   crearCitacion,
   obtenerCitacionPublicaPorToken,
   responderCitacionPublica,
   listarCitaciones,
+  registrarAcuerdosMutuos,
+  obtenerActaCitacionPDF,
 }
