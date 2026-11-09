@@ -283,6 +283,15 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
 
       // Cuadrante 1: Docente / Directivo
       doc.roundedRect(cuadro1X, cuadroY, cuadroW, cuadroH, 4).fill(BLANCO).stroke(GRIS_BORDE)
+      if (acuerdos.firma_docente && typeof acuerdos.firma_docente === 'string') {
+        try {
+          const base64Data = acuerdos.firma_docente.replace(/^data:image\/\w+;base64,/, '')
+          const imgBuffer = Buffer.from(base64Data, 'base64')
+          doc.image(imgBuffer, cuadro1X + 45, cuadroY + 4, { fit: [150, 36], align: 'center', valign: 'center' })
+        } catch {
+          // Fallback silencioso si el buffer no es válido
+        }
+      }
       doc.moveTo(cuadro1X + 20, cuadroY + 42).lineTo(cuadro1X + cuadroW - 20, cuadroY + 42).stroke(GRIS_BORDE)
 
       doc.font('Helvetica-Bold').fontSize(7.5).fillColor(TEXTO_OSCURO)
@@ -292,6 +301,15 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
 
       // Cuadrante 2: Apoderado Titular
       doc.roundedRect(cuadro2X, cuadroY, cuadroW, cuadroH, 4).fill(BLANCO).stroke(GRIS_BORDE)
+      if (acuerdos.firma_apoderado && typeof acuerdos.firma_apoderado === 'string') {
+        try {
+          const base64Data = acuerdos.firma_apoderado.replace(/^data:image\/\w+;base64,/, '')
+          const imgBuffer = Buffer.from(base64Data, 'base64')
+          doc.image(imgBuffer, cuadro2X + 45, cuadroY + 4, { fit: [150, 36], align: 'center', valign: 'center' })
+        } catch {
+          // Fallback silencioso si el buffer no es válido
+        }
+      }
       doc.moveTo(cuadro2X + 20, cuadroY + 42).lineTo(cuadro2X + cuadroW - 20, cuadroY + 42).stroke(GRIS_BORDE)
 
       const nombreApo = `${citacion.apoderado?.nombre || 'Apoderado/a'} ${citacion.apoderado?.apellido || ''}`

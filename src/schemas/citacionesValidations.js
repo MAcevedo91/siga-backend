@@ -142,6 +142,8 @@ const registrarAcuerdosSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha_proximo_seguimiento debe tener formato YYYY-MM-DD')
     .optional()
     .nullable(),
+  firma_docente: z.string().optional().nullable(),
+  firma_apoderado: z.string().optional().nullable(),
 })
 
 module.exports = {
