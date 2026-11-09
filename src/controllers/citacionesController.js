@@ -123,6 +123,46 @@ const descargarActaPdfHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * GET /api/v1/citaciones/metricas y GET /api/citaciones/metricas
+ * Retorna analítica agregada de participación familiar, asistencia y motivos formativos (TASK 10.3.1).
+ */
+const obtenerMetricasHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const data = await citacionesService.obtenerMetricasCitaciones(tenantId, req.query)
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en obtenerMetricasHandler:', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/citaciones/estudiante/:estudianteId y GET /api/citaciones/estudiante/:estudianteId
+ * Retorna el historial cronológico y resumen de citaciones de un estudiante (TASK 10.3.1).
+ */
+const obtenerHistorialEstudianteHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { estudianteId } = req.params
+
+    const data = await citacionesService.obtenerHistorialCitacionesEstudiante(tenantId, estudianteId)
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en obtenerHistorialEstudianteHandler:', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearCitacionHandler,
   listarCitacionesHandler,
@@ -130,4 +170,6 @@ module.exports = {
   responderCitacionPublicaHandler,
   registrarAcuerdosHandler,
   descargarActaPdfHandler,
+  obtenerMetricasHandler,
+  obtenerHistorialEstudianteHandler,
 }

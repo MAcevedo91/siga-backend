@@ -8,6 +8,9 @@ const {
   responderCitacionPublicaSchema,
   tokenParamSchema,
   registrarAcuerdosSchema,
+  metricasFiltrosSchema,
+  estudianteIdParamSchema,
+  MOTIVOS_VALIDOS,
 } = require('../schemas/citacionesValidations')
 const {
   generarActaCitacionPDF,
@@ -523,7 +526,7 @@ const registrarAcuerdosMutuos = async (tenantId, citacionId, userId, body) => {
           profesores_jefes:usuarios!cursos_profesor_jefe_id_fkey ( id, nombre, apellido, email )
         )
       ),
-      apoderados ( id, nombre, apellido, email, telefono, relacion ),
+      apoderados ( id, nombre, apellido, email, telefono ),
       usuarios!citaciones_formativas_docente_id_fkey ( id, nombre, apellido, email )
     `
     )
@@ -667,7 +670,7 @@ const obtenerActaCitacionPDF = async (tenantId, citacionId) => {
         curso_id,
         cursos ( id, nombre )
       ),
-      apoderados ( id, nombre, apellido, email, telefono, relacion ),
+      apoderados ( id, nombre, apellido, email, telefono ),
       usuarios!citaciones_formativas_docente_id_fkey ( id, nombre, apellido, email )
     `
     )
@@ -702,6 +705,292 @@ const obtenerActaCitacionPDF = async (tenantId, citacionId) => {
   }
 }
 
+/**
+ * Obtiene métricas agregadas de participación familiar, adherencia y distribución de motivos (TASK 10.3.1).
+ *
+ * @param {string} tenantId - UUID del establecimiento
+ * @param {Object} query - Filtros opcionales (fecha_desde, fecha_hasta, docente_id)
+ * @returns {Promise<Object>} Resumen estadístico y métricas de adherencia parental
+ */
+const obtenerMetricasCitaciones = async (tenantId, query = {}) => {
+  const parseResult = metricasFiltrosSchema.safeParse(query)
+  if (!parseResult.success) {
+    const issues = parseResult.error.issues || parseResult.error.errors || []
+    const err = new Error(issues.map((i) => i.message).join('. '))
+    err.statusCode = 400
+    throw err
+  }
+
+  const { fecha_desde, fecha_hasta, docente_id } = parseResult.data
+
+  let q = supabase
+    .from('citaciones_formativas')
+    .select('id, folio, estado, motivo_categoria, fecha_hora_programada, fecha_respuesta_apoderado')
+    .eq('tenant_id', tenantId)
+
+  if (fecha_desde) {
+    q = q.gte('fecha_hora_programada', new Date(fecha_desde).toISOString())
+  }
+  if (fecha_hasta) {
+    q = q.lte('fecha_hora_programada', new Date(fecha_hasta).toISOString())
+  }
+  if (docente_id) {
+    q = q.eq('docente_id', docente_id)
+  }
+
+  const { data: citaciones, error } = await q
+
+  if (error) {
+    logger.error('Error al calcular métricas de citaciones en Supabase:', error)
+    if (error.code === '42P01') {
+      return {
+        totales: {
+          total_convocadas: 0,
+          realizadas: 0,
+          confirmadas: 0,
+          reprogramadas: 0,
+          justificadas: 0,
+          no_asiste: 0,
+          programadas: 0,
+          canceladas: 0,
+        },
+        tasas: {
+          asistencia_efectiva: 0,
+          adherencia_parental: 0,
+          efectividad_acuerdos: 0,
+        },
+        distribucion_motivos: {},
+        ranking_motivos: [],
+      }
+    }
+    const err = new Error('Error al consultar métricas de citaciones')
+    err.statusCode = 500
+    throw err
+  }
+
+  const totalConvocadas = citaciones ? citaciones.length : 0
+
+  // Conteo por estados
+  const realizadas = (citaciones || []).filter((c) => c.estado === 'realizada').length
+  const confirmadas = (citaciones || []).filter((c) => c.estado === 'confirmada').length
+  const reprogramadas = (citaciones || []).filter((c) => c.estado === 'reprogramacion_solicitada').length
+  const justificadas = (citaciones || []).filter((c) => c.estado === 'justificada').length
+  const noAsiste = (citaciones || []).filter((c) => c.estado === 'no_asiste').length
+  const programadas = (citaciones || []).filter((c) => c.estado === 'programada').length
+  const canceladas = (citaciones || []).filter((c) => c.estado === 'cancelada').length
+
+  // Tasa de asistencia efectiva: realizadas vs (realizadas + no_asiste)
+  const totalEvaluadas = realizadas + noAsiste
+  const tasaAsistenciaEfectiva = totalEvaluadas > 0
+    ? Number(((realizadas / totalEvaluadas) * 100).toFixed(1))
+    : 0
+
+  // Tasa de adherencia temprana: apoderados que interactuaron activamente
+  const respondieron = (citaciones || []).filter(
+    (c) => c.fecha_respuesta_apoderado != null || ['confirmada', 'reprogramacion_solicitada', 'justificada'].includes(c.estado)
+  ).length
+  const tasaAdherenciaParental = totalConvocadas > 0
+    ? Number(((respondieron / totalConvocadas) * 100).toFixed(1))
+    : 0
+
+  // Distribución de motivos formativos
+  const distribucionMotivos = {}
+  MOTIVOS_VALIDOS.forEach((motivo) => {
+    const cant = (citaciones || []).filter((c) => c.motivo_categoria === motivo).length
+    distribucionMotivos[motivo] = {
+      cantidad: cant,
+      porcentaje: totalConvocadas > 0 ? Number(((cant / totalConvocadas) * 100).toFixed(1)) : 0,
+    }
+  })
+
+  const rankingMotivos = MOTIVOS_VALIDOS.map((motivo) => ({
+    motivo,
+    cantidad: distribucionMotivos[motivo].cantidad,
+    porcentaje: distribucionMotivos[motivo].porcentaje,
+  })).sort((a, b) => b.cantidad - a.cantidad)
+
+  // Consulta de acuerdos mutuos para calcular efectividad de cierre
+  let totalAcuerdos = 0
+  try {
+    const { count, error: acError } = await supabase
+      .from('citacion_acuerdos_mutuos')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+
+    if (!acError && count != null) {
+      totalAcuerdos = count
+    }
+  } catch (err) {
+    logger.warn('Advertencia al consultar conteo de acuerdos mutuos:', err.message)
+  }
+
+  const tasaEfectividadAcuerdos = realizadas > 0
+    ? Number(((Math.min(totalAcuerdos, realizadas) / realizadas) * 100).toFixed(1))
+    : 0
+
+  return {
+    totales: {
+      total_convocadas: totalConvocadas,
+      realizadas,
+      confirmadas,
+      reprogramadas,
+      justificadas,
+      no_asiste: noAsiste,
+      programadas,
+      canceladas,
+    },
+    tasas: {
+      asistencia_efectiva: tasaAsistenciaEfectiva,
+      adherencia_parental: tasaAdherenciaParental,
+      efectividad_acuerdos: tasaEfectividadAcuerdos,
+    },
+    distribucion_motivos: distribucionMotivos,
+    ranking_motivos: rankingMotivos,
+  }
+}
+
+/**
+ * Consulta el historial cronológico enriquecido de citaciones de un estudiante con actas descargables (TASK 10.3.1).
+ *
+ * @param {string} tenantId - UUID del colegio
+ * @param {string} estudianteId - UUID del estudiante
+ * @returns {Promise<Object>} Historial y resumen analítico del alumno
+ */
+const obtenerHistorialCitacionesEstudiante = async (tenantId, estudianteId) => {
+  const parseResult = estudianteIdParamSchema.safeParse({ estudianteId })
+  if (!parseResult.success) {
+    const issues = parseResult.error.issues || parseResult.error.errors || []
+    const err = new Error(issues.map((i) => i.message).join('. '))
+    err.statusCode = 400
+    throw err
+  }
+
+  // 1. Verificar existencia y pertenencia del estudiante al tenant
+  const { data: estudiante, error: estError } = await supabase
+    .from('estudiantes')
+    .select('id, nombre, apellido, rut, curso_id, cursos ( id, nombre )')
+    .eq('id', estudianteId)
+    .eq('tenant_id', tenantId)
+    .single()
+
+  if (estError || !estudiante) {
+    const err = new Error('Estudiante no encontrado en el establecimiento')
+    err.statusCode = 404
+    throw err
+  }
+
+  // 2. Consultar citaciones con apoderado, docente y acuerdos mutuos
+  const { data: citaciones, error: citError } = await supabase
+    .from('citaciones_formativas')
+    .select(`
+      id,
+      folio,
+      motivo_categoria,
+      motivo_detalle,
+      fecha_hora_programada,
+      lugar_entrevista,
+      modalidad,
+      enlace_virtual,
+      estado,
+      fecha_respuesta_apoderado,
+      comentario_apoderado,
+      nueva_fecha_solicitada,
+      conclusiones_entrevista,
+      realizada_at,
+      created_at,
+      apoderados ( id, nombre, apellido, email, telefono ),
+      usuarios!citaciones_formativas_docente_id_fkey ( id, nombre, apellido, email ),
+      citacion_acuerdos_mutuos (
+        id,
+        compromisos_colegio,
+        compromisos_apoderado,
+        observaciones_pedagogicas,
+        fecha_proximo_seguimiento,
+        hash_sha256,
+        creado_en
+      )
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('estudiante_id', estudianteId)
+    .order('fecha_hora_programada', { ascending: false })
+
+  if (citError) {
+    logger.error('Error al consultar historial de citaciones del estudiante:', citError)
+    if (citError.code === '42P01') {
+      return {
+        estudiante,
+        metricas_estudiante: {
+          total_citaciones: 0,
+          realizadas: 0,
+          no_asiste: 0,
+          tasa_asistencia: 0,
+          compromisos_vigentes: 0,
+        },
+        citaciones: [],
+      }
+    }
+    const err = new Error('Error al consultar historial de citaciones')
+    err.statusCode = 500
+    throw err
+  }
+
+  const hoyStr = new Date().toISOString().split('T')[0]
+  let compromisosVigentes = 0
+
+  const historialEnriquecido = (citaciones || []).map((c) => {
+    const acuerdo = Array.isArray(c.citacion_acuerdos_mutuos)
+      ? c.citacion_acuerdos_mutuos[0]
+      : c.citacion_acuerdos_mutuos
+
+    const tieneActa = Boolean(acuerdo && acuerdo.hash_sha256)
+
+    if (acuerdo && acuerdo.fecha_proximo_seguimiento && acuerdo.fecha_proximo_seguimiento >= hoyStr) {
+      compromisosVigentes++
+    }
+
+    return {
+      id: c.id,
+      folio: c.folio,
+      motivo_categoria: c.motivo_categoria,
+      motivo_detalle: c.motivo_detalle,
+      fecha_hora_programada: c.fecha_hora_programada,
+      lugar_entrevista: c.lugar_entrevista,
+      modalidad: c.modalidad,
+      enlace_virtual: c.enlace_virtual,
+      estado: c.estado,
+      fecha_respuesta_apoderado: c.fecha_respuesta_apoderado,
+      comentario_apoderado: c.comentario_apoderado,
+      nueva_fecha_solicitada: c.nueva_fecha_solicitada,
+      conclusiones_entrevista: c.conclusiones_entrevista,
+      realizada_at: c.realizada_at,
+      created_at: c.created_at,
+      apoderado: c.apoderados || null,
+      docente: c.usuarios || null,
+      acuerdos: acuerdo || null,
+      tiene_acta: tieneActa,
+      acta_pdf_url: tieneActa ? `/api/citaciones/${c.id}/acta-pdf` : null,
+    }
+  })
+
+  const total = historialEnriquecido.length
+  const realizadas = historialEnriquecido.filter((c) => c.estado === 'realizada').length
+  const noAsiste = historialEnriquecido.filter((c) => c.estado === 'no_asiste').length
+  const evaluadas = realizadas + noAsiste
+  const tasaAsistencia = evaluadas > 0 ? Number(((realizadas / evaluadas) * 100).toFixed(1)) : 0
+
+  return {
+    estudiante,
+    metricas_estudiante: {
+      total_citaciones: total,
+      realizadas,
+      no_asiste: noAsiste,
+      tasa_asistencia: tasaAsistencia,
+      compromisos_vigentes: compromisosVigentes,
+    },
+    citaciones: historialEnriquecido,
+  }
+}
+
 module.exports = {
   validarDisponibilidadDocente,
   crearCitacion,
@@ -710,4 +999,6 @@ module.exports = {
   listarCitaciones,
   registrarAcuerdosMutuos,
   obtenerActaCitacionPDF,
+  obtenerMetricasCitaciones,
+  obtenerHistorialCitacionesEstudiante,
 }

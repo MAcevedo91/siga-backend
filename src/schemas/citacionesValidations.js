@@ -146,6 +146,32 @@ const registrarAcuerdosSchema = z.object({
   firma_apoderado: z.string().optional().nullable(),
 })
 
+/**
+ * Esquema para validar los filtros de métricas analíticas (TASK 10.3.1)
+ */
+const metricasFiltrosSchema = z.object({
+  fecha_desde: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: 'fecha_desde debe ser una fecha válida (ISO 8601 o YYYY-MM-DD)',
+    }),
+  fecha_hasta: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: 'fecha_hasta debe ser una fecha válida (ISO 8601 o YYYY-MM-DD)',
+    }),
+  docente_id: z.string().uuid('docente_id debe ser un UUID válido').optional(),
+})
+
+/**
+ * Esquema para validar el UUID del estudiante en parámetros de ruta (TASK 10.3.1)
+ */
+const estudianteIdParamSchema = z.object({
+  estudianteId: z.string().uuid('estudianteId debe ser un UUID válido'),
+})
+
 module.exports = {
   MOTIVOS_VALIDOS,
   MODALIDADES_VALIDAS,
@@ -155,4 +181,6 @@ module.exports = {
   responderCitacionPublicaSchema,
   tokenParamSchema,
   registrarAcuerdosSchema,
+  metricasFiltrosSchema,
+  estudianteIdParamSchema,
 }

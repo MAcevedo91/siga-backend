@@ -5,6 +5,8 @@ const {
   listarCitacionesHandler,
   registrarAcuerdosHandler,
   descargarActaPdfHandler,
+  obtenerMetricasHandler,
+  obtenerHistorialEstudianteHandler,
 } = require('../controllers/citacionesController')
 
 const router = Router()
@@ -12,6 +14,20 @@ const router = Router()
 // =============================================================================
 // RUTAS PRIVADAS: CITACIONES FORMATIVAS (DOCENTES / DIRECTIVOS / CONVIVENCIA)
 // =============================================================================
+
+// Analítica agregada de participación familiar y motivos formativos (TASK 10.3.1)
+router.get(
+  '/metricas',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  obtenerMetricasHandler
+)
+
+// Historial cronológico enriquecido de citaciones por estudiante (TASK 10.3.1)
+router.get(
+  '/estudiante/:estudianteId',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  obtenerHistorialEstudianteHandler
+)
 
 // Listar citaciones del establecimiento
 router.get(
