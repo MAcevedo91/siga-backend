@@ -111,25 +111,35 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
         .fontSize(9)
         .text(`FOLIO: ${folioTexto}`, 410, 56, { width: 145, align: 'center' })
 
-      // Título del Acta
-      doc.y = 118
+      // Título del Acta (centrado en todo el ancho de página 522 pt, reseteando coordenadas)
       doc
         .fillColor(TEXTO_OSCURO)
         .font('Helvetica-Bold')
-        .fontSize(13)
-        .text('ACTA OFICIAL DE ENTREVISTA PEDAGÓGICA Y COMPROMISOS MUTUOS', { align: 'center' })
+        .fontSize(12)
+        .text('ACTA OFICIAL DE ENTREVISTA PEDAGÓGICA Y COMPROMISOS MUTUOS', 45, 118, {
+          width: 522,
+          align: 'center',
+        })
 
       doc
         .font('Helvetica')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor(GRIS_TEXTO)
-        .text('ACUERDOS DE CORRESPONSABILIDAD FAMILIA-ESCUELA PARA EL BIENESTAR FORMATIVO', { align: 'center' })
+        .text('ACUERDOS DE CORRESPONSABILIDAD FAMILIA-ESCUELA PARA EL BIENESTAR FORMATIVO', 45, 134, {
+          width: 522,
+          align: 'center',
+        })
 
-      doc.moveDown(0.8)
+      doc.y = 148
 
       // =======================================================================
       // 2. SECCIÓN I: IDENTIFICACIÓN DE LOS COMPARECIENTES
       // =======================================================================
+      const est = citacion.estudiante || citacion.estudiantes || {}
+      const apod = citacion.apoderado || citacion.apoderados || {}
+      const docUser = citacion.docente || citacion.usuarios || {}
+      const cursoNombre = est.curso?.nombre || est.cursos?.nombre || est.curso || 'No informado'
+
       const startYInfo = doc.y
       doc.roundedRect(45, startYInfo, 522, 78, 4).fill(GRIS_FONDO).stroke(GRIS_BORDE)
 
@@ -144,18 +154,18 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
       // Fila 1: Estudiante y Apoderado
       doc.font('Helvetica-Bold').fontSize(8).fillColor(TEXTO_OSCURO)
       doc.text('Estudiante: ', leftX, yActual, { continued: true })
-      doc.font('Helvetica').text(`${citacion.estudiante?.nombre || ''} ${citacion.estudiante?.apellido || ''} (RUT: ${citacion.estudiante?.rut || 'Sin RUT'})`)
+      doc.font('Helvetica').text(`${est.nombre || ''} ${est.apellido || ''} (RUT: ${est.rut || 'Sin RUT'})`)
 
       doc.font('Helvetica-Bold').text('Apoderado/a: ', rightX, yActual, { continued: true })
-      doc.font('Helvetica').text(`${citacion.apoderado?.nombre || ''} ${citacion.apoderado?.apellido || ''} (RUT: ${citacion.apoderado?.rut || 'Sin RUT'})`)
+      doc.font('Helvetica').text(`${apod.nombre || ''} ${apod.apellido || ''} (RUT: ${apod.rut || 'Sin RUT'})`)
 
       // Fila 2: Curso y Docente
       yActual += 14
       doc.font('Helvetica-Bold').text('Curso: ', leftX, yActual, { continued: true })
-      doc.font('Helvetica').text(`${citacion.estudiante?.curso?.nombre || citacion.estudiante?.curso || 'No informado'}`)
+      doc.font('Helvetica').text(cursoNombre)
 
       doc.font('Helvetica-Bold').text('Docente/Directivo: ', rightX, yActual, { continued: true })
-      doc.font('Helvetica').text(`${citacion.docente?.nombre || 'Profesor Jefe / Equipo de Formación'}`)
+      doc.font('Helvetica').text(`${docUser.nombre || 'Profesor Jefe'} ${docUser.apellido || ''}`.trim())
 
       // Fila 3: Fecha/Hora y Categoría
       yActual += 14
@@ -281,11 +291,14 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
       const cuadro2X = 325
       const cuadroY = yFirmas + 16
 
+      const firmaDocente = acuerdos.firma_docente || acuerdos.firma_docente_data
+      const firmaApoderado = acuerdos.firma_apoderado || acuerdos.firma_apoderado_data
+
       // Cuadrante 1: Docente / Directivo
       doc.roundedRect(cuadro1X, cuadroY, cuadroW, cuadroH, 4).fill(BLANCO).stroke(GRIS_BORDE)
-      if (acuerdos.firma_docente && typeof acuerdos.firma_docente === 'string') {
+      if (firmaDocente && typeof firmaDocente === 'string') {
         try {
-          const base64Data = acuerdos.firma_docente.replace(/^data:image\/\w+;base64,/, '')
+          const base64Data = firmaDocente.replace(/^data:image\/\w+;base64,/, '')
           const imgBuffer = Buffer.from(base64Data, 'base64')
           doc.image(imgBuffer, cuadro1X + 45, cuadroY + 4, { fit: [150, 36], align: 'center', valign: 'center' })
         } catch {
@@ -294,16 +307,17 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
       }
       doc.moveTo(cuadro1X + 20, cuadroY + 42).lineTo(cuadro1X + cuadroW - 20, cuadroY + 42).stroke(GRIS_BORDE)
 
+      const nombreDoc = `${docUser.nombre || 'Docente / Directivo Convocante'} ${docUser.apellido || ''}`.trim()
       doc.font('Helvetica-Bold').fontSize(7.5).fillColor(TEXTO_OSCURO)
-      doc.text(citacion.docente?.nombre || 'Docente / Directivo Convocante', cuadro1X, cuadroY + 46, { width: cuadroW, align: 'center' })
+      doc.text(nombreDoc, cuadro1X, cuadroY + 46, { width: cuadroW, align: 'center' })
       doc.font('Helvetica').fontSize(6.5).fillColor(GRIS_TEXTO)
       doc.text('Escuela Coeducacional N° 1 El Salvador', cuadro1X, cuadroY + 54, { width: cuadroW, align: 'center' })
 
       // Cuadrante 2: Apoderado Titular
       doc.roundedRect(cuadro2X, cuadroY, cuadroW, cuadroH, 4).fill(BLANCO).stroke(GRIS_BORDE)
-      if (acuerdos.firma_apoderado && typeof acuerdos.firma_apoderado === 'string') {
+      if (firmaApoderado && typeof firmaApoderado === 'string') {
         try {
-          const base64Data = acuerdos.firma_apoderado.replace(/^data:image\/\w+;base64,/, '')
+          const base64Data = firmaApoderado.replace(/^data:image\/\w+;base64,/, '')
           const imgBuffer = Buffer.from(base64Data, 'base64')
           doc.image(imgBuffer, cuadro2X + 45, cuadroY + 4, { fit: [150, 36], align: 'center', valign: 'center' })
         } catch {
@@ -312,11 +326,11 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
       }
       doc.moveTo(cuadro2X + 20, cuadroY + 42).lineTo(cuadro2X + cuadroW - 20, cuadroY + 42).stroke(GRIS_BORDE)
 
-      const nombreApo = `${citacion.apoderado?.nombre || 'Apoderado/a'} ${citacion.apoderado?.apellido || ''}`
+      const nombreApo = `${apod.nombre || 'Apoderado/a Titular'} ${apod.apellido || ''}`.trim()
       doc.font('Helvetica-Bold').fontSize(7.5).fillColor(TEXTO_OSCURO)
       doc.text(nombreApo, cuadro2X, cuadroY + 46, { width: cuadroW, align: 'center' })
       doc.font('Helvetica').fontSize(6.5).fillColor(GRIS_TEXTO)
-      doc.text(`RUT: ${citacion.apoderado?.rut || 'Firma Apoderado Titular'}`, cuadro2X, cuadroY + 54, { width: cuadroW, align: 'center' })
+      doc.text(`RUT: ${apod.rut || 'Firma Apoderado Titular'}`, cuadro2X, cuadroY + 54, { width: cuadroW, align: 'center' })
 
       // =======================================================================
       // 7. PIE DE PÁGINA Y CERTIFICACIÓN FORENSE SHA-256
@@ -324,6 +338,10 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
       const range = doc.bufferedPageRange()
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i)
+
+        // Evitar auto-paginación accidental al escribir en el área de margen inferior
+        const oldBottomMargin = doc.page.margins.bottom
+        doc.page.margins.bottom = 0
 
         // Línea divisoria inferior
         doc.moveTo(45, 742).lineTo(567, 742).stroke(GRIS_BORDE)
@@ -336,20 +354,22 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
             'Documento oficial generado bajo el marco de la Circular N° 482 de la Superintendencia de Educación y RICE.',
             45,
             746,
-            { align: 'center', width: 522 }
+            { align: 'center', width: 522, lineBreak: false }
           )
 
         doc
           .font('Courier-Bold')
           .fontSize(6.5)
           .fillColor(AZUL_INSTITUCIONAL)
-          .text(`Hash SHA-256 de Certificación: ${hashDocumento}`, 45, 755, { align: 'center', width: 522 })
+          .text(`Hash SHA-256 de Certificación: ${hashDocumento}`, 45, 755, { align: 'center', width: 522, lineBreak: false })
 
         doc
           .font('Helvetica')
           .fontSize(6.5)
           .fillColor(GRIS_TEXTO)
-          .text(`Página ${i + 1} de ${range.count} · Folio: ${folioTexto}`, 45, 764, { align: 'center', width: 522 })
+          .text(`Página ${i + 1} de ${range.count} · Folio: ${folioTexto}`, 45, 764, { align: 'center', width: 522, lineBreak: false })
+
+        doc.page.margins.bottom = oldBottomMargin
       }
 
       doc.end()

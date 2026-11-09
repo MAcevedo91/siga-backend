@@ -496,7 +496,13 @@ const registrarAcuerdosMutuos = async (tenantId, citacionId, userId, body) => {
     throw err
   }
 
-  const { compromisos_colegio, compromisos_apoderado, fecha_proximo_seguimiento } = parseResult.data
+  const {
+    compromisos_colegio,
+    compromisos_apoderado,
+    fecha_proximo_seguimiento,
+    firma_docente,
+    firma_apoderado,
+  } = parseResult.data
 
   // 1. Obtener la citación con sus datos completos (estudiante, curso, apoderado, docente)
   const { data: citacion, error: citError } = await supabase
@@ -563,9 +569,14 @@ const registrarAcuerdosMutuos = async (tenantId, citacionId, userId, body) => {
         tenant_id: tenantId,
         compromisos_colegio,
         compromisos_apoderado,
-        fecha_proximo_seguimiento: fecha_proximo_seguimiento || null,
+        fecha_proximo_seguimiento:
+          fecha_proximo_seguimiento ||
+          new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        firma_docente_data: firma_docente || null,
+        firma_apoderado_data: firma_apoderado || null,
         hash_sha256,
-        updated_at: new Date().toISOString(),
+        creado_por: userId,
+        actualizado_en: new Date().toISOString(),
       },
       { onConflict: 'citacion_id' }
     )
