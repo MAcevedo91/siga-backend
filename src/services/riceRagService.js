@@ -9,11 +9,15 @@ const SYSTEM_INSTRUCTION_RAG = `Eres el Asesor Normativo y Especialista en Convi
 Tu propósito es orientar a docentes, directivos e inspectores sobre la aplicación del Reglamento Interno y de Convivencia Escolar (RICE) y la Circular N° 482 de la Superintendencia de Educación.
 
 REGLAS DE ORO OBLIGATORIAS:
-1. FUENTE ESTRICTA: Basa tus respuestas EXCLUSIVAMENTE en los fragmentos del RICE provistos dentro de la etiqueta <contexto_normativo_rice>. Queda estrictamente prohibido inventar o extrapolar sanciones, plazos o procedimientos no descritos.
-2. CITAS OBLIGATORIAS: Cita siempre de forma explícita el Artículo y Título/Capítulo correspondiente a cada recomendación o procedimiento.
-3. DEBIDO PROCESO Y PLAZOS: Si la consulta involucra una falta, destaca con precisión los plazos de citación a apoderados, el derecho del estudiante a ser escuchado (descargos), y la gradualidad de medidas formativas antes de cualquier sanción disciplinaria.
-4. CASOS CRÍTICOS (DELITOS): Si la situación describe hechos constitutivos de delito (abuso, armas, drogas, agresiones graves), recuerda la obligación legal de denuncia al Ministerio Público, Carabineros o PDI dentro de las 24 horas siguientes (Art. 175 letra e del Código Procesal Penal).
-5. LIMITACIÓN FACTUAL: Si el contexto provisto no contiene información suficiente para responder a la consulta, indícalo con total transparencia y recomienda revisar el documento oficial completo con el Encargado de Convivencia Escolar.
+1. FUENTE ESTRICTA Y JERARQUÍA NORMATIVA: Basa tus respuestas en los fragmentos provistos dentro de la etiqueta <contexto_normativo_rice>.
+   - Prioridad Local: Si el RICE del establecimiento cuenta con un artículo o procedimiento para la materia consultada, aplícalo con prioridad.
+   - Subsidiariedad de la Circular N° 482 (Superintendencia de Educación): Si el RICE del establecimiento carece de un protocolo específico, guarda silencio o presenta una laguna sobre la situación consultada (por ejemplo: ciberacoso escolar, ideación suicida, violencia digital, etc.), rige de forma supletoria y obligatoria el protocolo de la Circular N° 482 de la Superintendencia provisto en el contexto. En este caso:
+     * Entrega el procedimiento detallado paso a paso conforme a la Circular N° 482 (medidas de contención inmediata, notificación a apoderados en un plazo máximo de 24 horas, debido proceso y denuncia penal en 24 horas si reviste carácter de delito según Art. 175 letra e del CPP).
+     * Finaliza SIEMPRE indicando con total claridad que, al no contar el RICE del establecimiento con dicho protocolo específico, se aplicó la Circular N° 482 de manera subsidiaria, e incluye una recomendación explícita para que el Encargado/a de Convivencia Escolar y la Dirección actualicen el RICE del colegio incorporando el protocolo obligatorio.
+2. CITAS OBLIGATORIAS: Cita siempre de forma explícita el Artículo y Título/Capítulo correspondiente a cada recomendación o procedimiento, identificando si la fuente es el RICE del establecimiento o la Circular N° 482.
+3. DEBIDO PROCESO Y PLAZOS: Si la consulta involucra una falta o incidente, destaca con precisión los plazos de citación a apoderados (máximo 24 horas), el derecho del estudiante a ser escuchado (descargos), y la gradualidad de medidas formativas antes de cualquier sanción disciplinaria.
+4. CASOS CRÍTICOS (DELITOS): Si la situación describe hechos constitutivos de delito (abuso sexual, porte de armas, drogas, agresiones graves), recuerda la obligación legal de denuncia al Ministerio Público, Carabineros o PDI dentro de las 24 horas siguientes (Art. 175 letra e del Código Procesal Penal).
+5. LIMITACIÓN FACTUAL: Si ni el RICE local ni la Circular N° 482 contienen información suficiente para responder a la consulta, indícalo con total transparencia y recomienda consultar directamente con el Encargado de Convivencia Escolar o la Superintendencia de Educación.
 6. TONO: Institucional, pedagógico, restaurativo, claro y profesional.`
 
 /**
@@ -22,14 +26,29 @@ REGLAS DE ORO OBLIGATORIAS:
  */
 const generarRespuestaFallback = (pregunta, chunks = []) => {
   if (!chunks || chunks.length === 0) {
-    return 'No se encontraron artículos o procedimientos específicos en el RICE del establecimiento vinculados a su consulta. Se recomienda consultar directamente con el Encargado/a de Convivencia Escolar o la Dirección del establecimiento.'
+    return 'No se encontraron artículos o procedimientos específicos en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta. Se recomienda consultar directamente con el Encargado/a de Convivencia Escolar o la Dirección del establecimiento.'
   }
 
+  const tieneNormativaNacional = chunks.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
+  const tieneNormativaLocal = chunks.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
+
   const resumenArticulos = chunks
-    .map((c) => `• **${c.articulo || 'Artículo'}** (${c.seccion || 'Normativa'}):\n  "${c.contenido.slice(0, 300)}..."`)
+    .map((c) => {
+      const esNacional = Boolean(c.es_normativa_nacional || c.tenant_id === null)
+      const origen = esNacional ? 'Circular N° 482 Superintendencia' : 'RICE Establecimiento'
+      return `• **${c.articulo || 'Artículo'}** [${origen}] (${c.seccion || 'Normativa'}):\n  "${c.contenido.slice(0, 300)}..."`
+    })
     .join('\n\n')
 
-  return `Orientación preliminar basada en los fragmentos vigentes del RICE del establecimiento:\n\n${resumenArticulos}\n\n*Nota: Para detalles adicionales de plazos y debidos procesos, verifique los artículos citados en el documento institucional oficial.*`
+  let encabezado = 'Orientación preliminar basada en los fragmentos vigentes del RICE del establecimiento:'
+  let pie = '\n\n*Nota: Para detalles adicionales de plazos y debidos procesos, verifique los artículos citados en el documento institucional oficial.*'
+
+  if (tieneNormativaNacional && !tieneNormativaLocal) {
+    encabezado = 'Orientación normativa subsidiaria basada en la Circular N° 482 de la Superintendencia de Educación (aplicada de forma supletoria ante ausencia de protocolo específico en el RICE del colegio):'
+    pie = '\n\n*Recomendación de Gestión*: Conforme a las directrices de la Superintendencia de Educación, se recomienda al Encargado/a de Convivencia Escolar actualizar el RICE del establecimiento para incorporar formalmente este protocolo obligatorio.'
+  }
+
+  return `${encabezado}\n\n${resumenArticulos}${pie}`
 }
 
 /**
@@ -70,23 +89,67 @@ const consultarRice = async ({
 
     if (error) {
       logger.warn('Error al invocar RPC buscar_contexto_rice en Supabase:', error.message)
-      // Si la RPC no está instalada aún, intentar consulta directa a rice_chunks
+      // Si la RPC no está instalada aún, intentar consulta directa a rice_chunks (local o nacional)
       const { data: chunksDirectos } = await supabase
         .from('rice_chunks')
-        .select('id, documento_id, seccion, articulo, contenido')
-        .eq('tenant_id', tenantId)
+        .select('id, documento_id, seccion, articulo, contenido, tenant_id')
+        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
         .limit(4)
-      chunksRecuperados = (chunksDirectos || []).map((c) => ({ ...c, similitud: 0.8 }))
+      chunksRecuperados = (chunksDirectos || []).map((c) => ({
+        ...c,
+        similitud: 0.8,
+        es_normativa_nacional: c.tenant_id === null,
+      }))
     } else {
-      chunksRecuperados = data || []
+      chunksRecuperados = (data || []).map((c) => ({
+        ...c,
+        es_normativa_nacional: c.es_normativa_nacional !== undefined ? Boolean(c.es_normativa_nacional) : (c.tenant_id === null),
+      }))
     }
   } catch (dbErr) {
     logger.error('Error de base de datos en recuperación de contexto RICE:', dbErr)
   }
 
+  // 3.1 Búsqueda de rescate híbrida (léxica): Si la similitud vectorial no trajo chunks, buscar coincidencias léxicas en RICE y Circular 482
+  if (chunksRecuperados.length === 0) {
+    try {
+      const palabrasClave = consultaLimpia
+        .toLowerCase()
+        .replace(/[¿?¡!.,;:()]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && !['cual', 'cuales', 'como', 'pasos', 'debo', 'hacer', 'caso', 'para', 'ante', 'sobre', 'este'].includes(w))
+
+      if (palabrasClave.length > 0) {
+        logger.info(`Búsqueda vectorial sin resultados, ejecutando rescate léxico con términos: ${palabrasClave.join(', ')}`)
+        
+        // Intentar coincidencias en articulo o contenido
+        for (const termino of palabrasClave) {
+          const { data: chunksTermino } = await supabase
+            .from('rice_chunks')
+            .select('id, documento_id, seccion, articulo, contenido, tenant_id')
+            .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+            .or(`articulo.ilike.%${termino}%,contenido.ilike.%${termino}%`)
+            .limit(4)
+
+          if (chunksTermino && chunksTermino.length > 0) {
+            chunksRecuperados = chunksTermino.map((c) => ({
+              ...c,
+              similitud: 0.85,
+              es_normativa_nacional: c.tenant_id === null,
+            }))
+            logger.info(`Rescate léxico exitoso: ${chunksRecuperados.length} fragmentos recuperados para "${termino}"`)
+            break
+          }
+        }
+      }
+    } catch (rescateErr) {
+      logger.warn('Error no bloqueante en rescate léxico RICE:', rescateErr.message)
+    }
+  }
+
   // 4. Inferencia con Google Gemini Flash
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
   let respuestaFinal = ''
 
   if (!apiKey || apiKey === 'your-gemini-api-key' || process.env.NODE_ENV === 'test') {
@@ -97,9 +160,14 @@ const consultarRice = async ({
 
       const contextoXml = chunksRecuperados.length > 0
         ? chunksRecuperados
-            .map((c, idx) => `<fragmento id="${idx + 1}" articulo="${c.articulo || ''}" seccion="${c.seccion || ''}">\n${c.contenido}\n</fragmento>`)
+            .map((c, idx) => {
+              const fuenteLabel = c.es_normativa_nacional
+                ? 'Circular N° 482 Superintendencia de Educación (Normativa Nacional Subsidiaria)'
+                : 'RICE Establecimiento'
+              return `<fragmento id="${idx + 1}" articulo="${c.articulo || ''}" seccion="${c.seccion || ''}" fuente="${fuenteLabel}">\n${c.contenido}\n</fragmento>`
+            })
             .join('\n\n')
-        : 'No se encontraron fragmentos específicos en el RICE del colegio para esta consulta.'
+        : 'No se encontraron fragmentos específicos en el RICE del colegio ni en la Circular N° 482 para esta consulta.'
 
       const userPrompt = `
 <contexto_normativo_rice>
@@ -112,7 +180,13 @@ CONSULTA DEL FUNCIONARIO:
 Por favor entrega tu orientación conforme a las reglas del sistema, citando los artículos aplicables.
 `
 
-      const candidateModels = [modelName, 'gemini-2.0-flash', 'gemini-1.5-flash']
+      const candidateModels = [
+        modelName,
+        'gemini-3.5-flash-lite',
+        'gemini-flash-latest',
+        'gemini-3-flash-preview',
+        'gemini-2.0-flash',
+      ].filter(Boolean)
       let errorGeneracion = null
 
       for (const m of candidateModels) {
@@ -170,8 +244,10 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
       articulo: c.articulo,
       contenido: c.contenido,
       similitud: c.similitud ? Math.round(c.similitud * 100) / 100 : undefined,
+      es_normativa_nacional: Boolean(c.es_normativa_nacional),
     })),
     totalFuentes: chunksRecuperados.length,
+    tiene_normativa_nacional: chunksRecuperados.some((c) => Boolean(c.es_normativa_nacional)),
   }
 }
 

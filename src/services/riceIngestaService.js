@@ -32,23 +32,34 @@ const generarEmbeddingTexto = async (texto = '') => {
     return generarVectorSimulado(texto)
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.embedContent({
-      model: 'text-embedding-004',
-      contents: texto,
-    })
+  const candidateModels = [
+    'gemini-embedding-001',
+    'text-embedding-004',
+    'gemini-embedding-2',
+  ]
 
-    if (response?.embedding?.values) {
-      return response.embedding.values
+  for (const model of candidateModels) {
+    try {
+      const ai = new GoogleGenAI({ apiKey })
+      const response = await ai.models.embedContent({
+        model,
+        contents: texto,
+        config: {
+          outputDimensionality: 768,
+        },
+      })
+
+      const values = response?.embeddings?.[0]?.values || response?.embedding?.values
+      if (values && Array.isArray(values) && values.length === 768) {
+        return values
+      }
+    } catch (err) {
+      logger.warn(`Modelo de embedding ${model} no disponible (${err.message}). Probando alternativo...`)
     }
-
-    logger.warn('Formato inesperado en respuesta de embedContent, aplicando vector simulado')
-    return generarVectorSimulado(texto)
-  } catch (err) {
-    logger.error('Error al generar embedding con Gemini text-embedding-004:', err.message)
-    return generarVectorSimulado(texto)
   }
+
+  logger.warn('No se pudo generar embedding de 768 dimensiones con Gemini API, recurriendo a vector determinista')
+  return generarVectorSimulado(texto)
 }
 
 /**

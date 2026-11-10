@@ -11,6 +11,7 @@
     "start": "node src/server.js",
     "seed": "node src/utils/seed.js",
     "seed:reglas": "node src/utils/seedReglas.js",
+    "seed:circular482": "node src/utils/seedCircular482.js",
     "lint": "eslint src/**/*.js",
     "test": "NODE_ENV=test jest",
     "test:watch": "NODE_ENV=test jest --watch",
