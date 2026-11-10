@@ -2,6 +2,14 @@ const express = require('express')
 const router = express.Router()
 const analyticsController = require('../controllers/analyticsController')
 const cacheMiddleware = require('../middlewares/cache')
+const requireRole = require('../middlewares/requireRole')
+
+// =============================================================================
+// CONTROL RBAC — ANALÍTICA INSTITUCIONAL
+// =============================================================================
+// Administrador, Directivo, Equipo de Formación e Inspector tienen acceso al módulo.
+// Docente queda bloqueado con HTTP 403 Forbidden.
+router.use(requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'))
 
 // GET /api/v1/analytics/resumen - Resumen general (cache 5min)
 router.get('/resumen', cacheMiddleware(300), analyticsController.getResumen)
@@ -31,7 +39,16 @@ router.get('/usuarios-actividad', cacheMiddleware(180), analyticsController.getU
 router.get('/por-abordaje', cacheMiddleware(180), analyticsController.getPorAbordaje)
 
 // GET & POST /api/v1/analytics/reporte-mensual-pdf - Descarga del informe ejecutivo mensual PDF con IA
-router.get('/reporte-mensual-pdf', analyticsController.descargarReporteMensualPdf)
-router.post('/reporte-mensual-pdf', analyticsController.descargarReporteMensualPdf)
+// Restringido exclusivamente al equipo directivo, administrativo y de formación (Inspector no autorizado)
+router.get(
+  '/reporte-mensual-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  analyticsController.descargarReporteMensualPdf
+)
+router.post(
+  '/reporte-mensual-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  analyticsController.descargarReporteMensualPdf
+)
 
 module.exports = router

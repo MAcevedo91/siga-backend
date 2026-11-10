@@ -2,9 +2,14 @@ const express = require('express')
 const router = express.Router()
 const { calcularRiesgoEstudiante, getEstudiantesConRiesgo } = require('../services/riesgoService')
 const authenticateToken = require('../middlewares/authenticateToken')
+const requireRole = require('../middlewares/requireRole')
 
 // GET /api/v1/riesgo/estudiante/:id
-router.get('/estudiante/:id', authenticateToken, async (req, res) => {
+router.get(
+  '/estudiante/:id',
+  authenticateToken,
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  async (req, res) => {
   try {
     const estudianteId = parseInt(req.params.id)
     const tenantId = req.user.tenant_id
@@ -17,7 +22,12 @@ router.get('/estudiante/:id', authenticateToken, async (req, res) => {
 })
 
 // GET /api/v1/riesgo/estudiantes?minScore=50
-router.get('/estudiantes', authenticateToken, async (req, res) => {
+// Listado global institucional de riesgo escolar (excluye Docentes para resguardar privacidad de otros cursos)
+router.get(
+  '/estudiantes',
+  authenticateToken,
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  async (req, res) => {
   try {
     const tenantId = req.user.tenant_id
     const minScore = parseInt(req.query.minScore) || 0
