@@ -5,13 +5,19 @@ const {
   getAuditoriaLogs
 } = require('../services/auditoriaService')
 const authenticateToken = require('../middlewares/authenticateToken')
+const requireRole = require('../middlewares/requireRole')
 
 /**
  * GET /auditoria/timeline
  * Obtiene el historial de cambios para un registro específico
  * Query params: tabla, registroId
+ * Restringido a Administrador, Directivo y Equipo de Formación
  */
-router.get('/timeline', authenticateToken, async (req, res) => {
+router.get(
+  '/timeline',
+  authenticateToken,
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  async (req, res) => {
   try {
     const { tabla, registroId } = req.query
     const tenantId = req.user.tenant_id
@@ -38,8 +44,13 @@ router.get('/timeline', authenticateToken, async (req, res) => {
  * GET /auditoria/logs
  * Obtiene registros de auditoría con filtros opcionales
  * Query params: tabla, userId, accion, fechaDesde, fechaHasta, limit
+ * Restringido estrictamente a Administrador
  */
-router.get('/logs', authenticateToken, async (req, res) => {
+router.get(
+  '/logs',
+  authenticateToken,
+  requireRole('Administrador'),
+  async (req, res) => {
   try {
     const {
       tabla,

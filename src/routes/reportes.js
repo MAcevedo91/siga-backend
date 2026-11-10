@@ -4,9 +4,14 @@ const { generarPerfilEstudiante } = require('../services/pdfService')
 const { calcularRiesgoEstudiante } = require('../services/riesgoService')
 const { supabase } = require('../utils/db')
 const authenticateToken = require('../middlewares/authenticateToken')
+const requireRole = require('../middlewares/requireRole')
 
 // GET /api/v1/reportes/estudiante/:id/perfil.pdf
-router.get('/estudiante/:id/perfil.pdf', authenticateToken, async (req, res) => {
+router.get(
+  '/estudiante/:id/perfil.pdf',
+  authenticateToken,
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  async (req, res) => {
   try {
     const estudianteId = parseInt(req.params.id)
     const tenantId = req.user.tenant_id
