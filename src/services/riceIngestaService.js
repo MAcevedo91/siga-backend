@@ -34,7 +34,6 @@ const generarEmbeddingTexto = async (texto = '') => {
 
   const candidateModels = [
     'gemini-embedding-001',
-    'text-embedding-004',
     'gemini-embedding-2',
   ]
 

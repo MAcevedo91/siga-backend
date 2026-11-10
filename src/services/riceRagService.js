@@ -21,18 +21,35 @@ REGLAS DE ORO OBLIGATORIAS:
 6. TONO: Institucional, pedagógico, restaurativo, claro y profesional.`
 
 /**
+ * Detecta si un fragmento corresponde a páginas de índice, tabla de contenidos
+ * o presentación genérica sin articulado sustantivo.
+ */
+const esChunkDeIndice = (chunk) => {
+  if (!chunk || !chunk.contenido) return false
+  const contenido = chunk.contenido
+  // Detecta patrones típicos de índices (ej. "........ 130", "..... 52" o múltiples series de 3 o más puntos)
+  const tienePuntosIndice = /\.{4,}\s*\d+/g.test(contenido) || (contenido.match(/\.{3,}/g) || []).length >= 3
+  const tienePalabraIndice = /índice|indice|tabla de contenidos/i.test(contenido)
+  const esArticuloGeneral = chunk.articulo === 'General' || !chunk.articulo
+  return Boolean((tienePuntosIndice && esArticuloGeneral) || (tienePalabraIndice && tienePuntosIndice))
+}
+
+/**
  * Genera una respuesta estructurada de contingencia (fallback) basada en los chunks recuperados
  * cuando la API de Gemini no está disponible o no hay API Key configurada.
  */
 const generarRespuestaFallback = (pregunta, chunks = []) => {
-  if (!chunks || chunks.length === 0) {
+  const chunksValidos = (chunks || []).filter((c) => !esChunkDeIndice(c))
+  const chunksAProcesar = chunksValidos.length > 0 ? chunksValidos : chunks
+
+  if (!chunksAProcesar || chunksAProcesar.length === 0) {
     return 'No se encontraron artículos o procedimientos específicos en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta. Se recomienda consultar directamente con el Encargado/a de Convivencia Escolar o la Dirección del establecimiento.'
   }
 
-  const tieneNormativaNacional = chunks.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
-  const tieneNormativaLocal = chunks.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
+  const tieneNormativaNacional = chunksAProcesar.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
+  const tieneNormativaLocal = chunksAProcesar.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
 
-  const resumenArticulos = chunks
+  const resumenArticulos = chunksAProcesar
     .map((c) => {
       const esNacional = Boolean(c.es_normativa_nacional || c.tenant_id === null)
       const origen = esNacional ? 'Circular N° 482 Superintendencia' : 'RICE Establecimiento'
@@ -83,18 +100,19 @@ const consultarRice = async ({
     const { data, error } = await supabase.rpc('buscar_contexto_rice', {
       p_tenant_id: tenantId,
       p_embedding: vectorConsulta,
-      p_match_count: 4,
+      p_match_count: 8,
       p_similarity_threshold: 0.35,
     })
 
     if (error) {
       logger.warn('Error al invocar RPC buscar_contexto_rice en Supabase:', error.message)
-      // Si la RPC no está instalada aún, intentar consulta directa a rice_chunks (local o nacional)
+      // Si la RPC no está instalada aún o falla, intentar consulta directa a rice_chunks excluyendo índices
       const { data: chunksDirectos } = await supabase
         .from('rice_chunks')
         .select('id, documento_id, seccion, articulo, contenido, tenant_id')
         .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
-        .limit(4)
+        .not('contenido', 'ilike', '%.....%')
+        .limit(8)
       chunksRecuperados = (chunksDirectos || []).map((c) => ({
         ...c,
         similitud: 0.8,
@@ -110,34 +128,41 @@ const consultarRice = async ({
     logger.error('Error de base de datos en recuperación de contexto RICE:', dbErr)
   }
 
-  // 3.1 Búsqueda de rescate híbrida (léxica): Si la similitud vectorial no trajo chunks, buscar coincidencias léxicas en RICE y Circular 482
+  // 3.1 Filtrar fragmentos que correspondan a páginas de índice o tablas de contenidos
+  const chunksUtiles = chunksRecuperados.filter((c) => !esChunkDeIndice(c))
+  chunksRecuperados = chunksUtiles.slice(0, 4)
+
+  // 3.2 Búsqueda de rescate híbrida (léxica): Si la similitud vectorial no trajo chunks útiles, buscar coincidencias léxicas sustantivas
   if (chunksRecuperados.length === 0) {
     try {
       const palabrasClave = consultaLimpia
         .toLowerCase()
         .replace(/[¿?¡!.,;:()]/g, '')
         .split(/\s+/)
-        .filter((w) => w.length > 3 && !['cual', 'cuales', 'como', 'pasos', 'debo', 'hacer', 'caso', 'para', 'ante', 'sobre', 'este'].includes(w))
+        .filter((w) => w.length > 3 && !['cual', 'cuales', 'como', 'pasos', 'debo', 'hacer', 'caso', 'para', 'ante', 'sobre', 'este', 'esta', 'estos'].includes(w))
 
       if (palabrasClave.length > 0) {
-        logger.info(`Búsqueda vectorial sin resultados, ejecutando rescate léxico con términos: ${palabrasClave.join(', ')}`)
+        logger.info(`Búsqueda vectorial sin resultados útiles, ejecutando rescate léxico con términos: ${palabrasClave.join(', ')}`)
         
-        // Intentar coincidencias en articulo o contenido
+        // Intentar coincidencias en articulo o contenido excluyendo índices
         for (const termino of palabrasClave) {
           const { data: chunksTermino } = await supabase
             .from('rice_chunks')
             .select('id, documento_id, seccion, articulo, contenido, tenant_id')
             .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
             .or(`articulo.ilike.%${termino}%,contenido.ilike.%${termino}%`)
-            .limit(4)
+            .not('contenido', 'ilike', '%.....%')
+            .limit(6)
 
-          if (chunksTermino && chunksTermino.length > 0) {
-            chunksRecuperados = chunksTermino.map((c) => ({
+          const chunksValidos = (chunksTermino || []).filter((c) => !esChunkDeIndice(c))
+
+          if (chunksValidos.length > 0) {
+            chunksRecuperados = chunksValidos.slice(0, 4).map((c) => ({
               ...c,
               similitud: 0.85,
               es_normativa_nacional: c.tenant_id === null,
             }))
-            logger.info(`Rescate léxico exitoso: ${chunksRecuperados.length} fragmentos recuperados para "${termino}"`)
+            logger.info(`Rescate léxico exitoso: ${chunksRecuperados.length} fragmentos sustantivos recuperados para "${termino}"`)
             break
           }
         }
@@ -149,7 +174,7 @@ const consultarRice = async ({
 
   // 4. Inferencia con Google Gemini Flash
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
   let respuestaFinal = ''
 
   if (!apiKey || apiKey === 'your-gemini-api-key' || process.env.NODE_ENV === 'test') {
@@ -182,11 +207,10 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
 
       const candidateModels = [
         modelName,
-        'gemini-3.5-flash-lite',
-        'gemini-flash-latest',
+        'gemini-3.8-flash',
         'gemini-3-flash-preview',
-        'gemini-2.0-flash',
-      ].filter(Boolean)
+        'gemini-4-argon',
+      ].filter((m, i, arr) => m && arr.indexOf(m) === i)
       let errorGeneracion = null
 
       for (const m of candidateModels) {
@@ -358,10 +382,10 @@ Entrega la orientación formativa y pedagógica pertinente para el Encargado de 
 
     const candidateModels = [
       process.env.GEMINI_MODEL,
+      'gemini-3.8-flash',
       'gemini-3-flash-preview',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-    ].filter(Boolean)
+      'gemini-4-argon',
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
     let textoRespuesta = ''
 
