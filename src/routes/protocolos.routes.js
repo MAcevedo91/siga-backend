@@ -9,7 +9,11 @@ const {
   accionesPendientesHandler,
   listarPasosHandler,
   actualizarPasoHandler,
+  subirEvidenciaHandler,
+  eliminarEvidenciaHandler,
+  descargarExpedientePDFHandler,
 } = require('../controllers/protocolosController')
+const { uploadEvidenciaMiddleware } = require('../middlewares/uploadEvidenciaMiddleware')
 
 const router = Router()
 
@@ -21,6 +25,12 @@ router.get('/tipos-protocolo', tiposProtocoloHandler)
 router.get('/acciones-pendientes',
   requireRole('Administrador', 'Equipo de Formación', 'Directivo'),
   accionesPendientesHandler
+)
+
+// Expediente Oficial RICE con Evidencias en PDF (Hallazgo 7)
+router.get('/:id/expediente-pdf',
+  requireRole('Administrador', 'Equipo de Formación', 'Directivo', 'Docente'),
+  descargarExpedientePDFHandler
 )
 
 // Lectura — todos los roles autenticados
@@ -42,6 +52,18 @@ router.patch('/:id/estado',
 router.patch('/:id/pasos/:pasoId',
   requireRole('Administrador', 'Equipo de Formación'),
   actualizarPasoHandler
+)
+
+// Carga y eliminación de evidencias probatorias en pasos (Hallazgo 7)
+router.post('/:id/pasos/:pasoId/evidencias',
+  requireRole('Administrador', 'Equipo de Formación'),
+  uploadEvidenciaMiddleware,
+  subirEvidenciaHandler
+)
+
+router.delete('/:id/pasos/:pasoId/evidencias/:evidenciaId',
+  requireRole('Administrador', 'Equipo de Formación'),
+  eliminarEvidenciaHandler
 )
 
 module.exports = router

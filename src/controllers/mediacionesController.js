@@ -1,4 +1,11 @@
 const mediacionesService = require('../services/mediacionesService')
+const pdfMediacionService = require('../services/pdfMediacionService')
+const emailServiceMediacion = require('../services/emailServiceMediacion')
+const {
+  listarDocumentosMediacionService,
+  subirDocumentoMediacionService,
+  descargarDocumentoMediacionService,
+} = require('../services/mediacionesDocumentosService')
 const logger = require('../utils/logger')
 
 /**
@@ -92,9 +99,276 @@ const notificarApoderadosHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * PUT /api/v1/mediaciones/:id/compromisos
+ * Guarda de forma atómica los compromisos y acuerdos formativos de la mediación.
+ */
+const guardarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.guardarCompromisos(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Compromisos de mediación registrados y actualizados exitosamente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en guardarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/compromisos
+ * Retorna todos los compromisos formativos vigentes de la mediación.
+ */
+const listarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const data = await mediacionesService.listarCompromisos(tenantId, id)
+
+    res.status(200).json({
+      status: 'success',
+      total: data.length,
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en listarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/acta-pdf
+ * Genera y descarga el Acta Oficial de Mediación Escolar en formato PDF con hash SHA-256.
+ */
+const descargarActaPdfHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const mediacion = await mediacionesService.obtenerMediacionPorId(tenantId, id)
+    const pdfBuffer = await pdfMediacionService.generarActaMediacionPDF(mediacion)
+
+    const folioSeguro = (mediacion.folio || 'S-F').replace(/[^a-zA-Z0-9_-]/g, '_')
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="Acta_Mediacion_${folioSeguro}.pdf"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+
+    res.status(200).send(pdfBuffer)
+  } catch (err) {
+    logger.error('Error en descargarActaPdfHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * POST /api/v1/mediaciones/:id/despachar-acta
+ * Despacha transaccionalmente el Acta Oficial en PDF a apoderados titulares y profesores jefes desduplicados.
+ */
+const despacharActaHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const resultado = await emailServiceMediacion.despacharActaOficial({
+      tenantId,
+      mediacionId: id,
+      usuarioId,
+    })
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Acta oficial de mediación despachada exitosamente',
+      data: resultado,
+    })
+  } catch (err) {
+    logger.error('Error en despacharActaHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * PATCH /api/v1/mediaciones/:id/evaluar-compromisos
+ * Evalúa el cumplimiento de compromisos formativos (cumplido, parcial, incumplido).
+ */
+const evaluarCompromisosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.evaluarCompromisos(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Compromisos formativos evaluados exitosamente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en evaluarCompromisosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * PATCH /api/v1/mediaciones/:id/cerrar
+ * Sella inmutablemente el expediente de mediación escolar y opcionalmente enlaza protocolo RICE.
+ */
+const cerrarMediacionHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await mediacionesService.cerrarMediacion(
+      tenantId,
+      id,
+      usuarioId,
+      req.body
+    )
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Expediente de mediación cerrado y sellado inmutablemente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en cerrarMediacionHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/estudiante/:estudianteId
+ * Retorna el historial conductual y restaurativo de un estudiante en mediaciones escolares.
+ */
+const historialEstudianteHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { estudianteId } = req.params
+
+    const data = await mediacionesService.obtenerHistorialMediacionesEstudiante(
+      tenantId,
+      estudianteId
+    )
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en historialEstudianteHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/documentos
+ * Retorna la lista de firmas y actas físicas asociadas al expediente.
+ */
+const listarDocumentosHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id } = req.params
+
+    const data = await listarDocumentosMediacionService(tenantId, id)
+
+    res.status(200).json({
+      status: 'success',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en listarDocumentosHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * POST /api/v1/mediaciones/:id/documentos
+ * Sube una firma manuscrita o un acta física firmada en PDF.
+ */
+const subirDocumentoHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuarioId = req.user.user_id || req.user.id
+    const { id } = req.params
+
+    const data = await subirDocumentoMediacionService(
+      tenantId,
+      id,
+      usuarioId,
+      req.file,
+      req.body
+    )
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Documento guardado exitosamente en el expediente',
+      data,
+    })
+  } catch (err) {
+    logger.error('Error en subirDocumentoHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/mediaciones/:id/documentos/:documentoId
+ * Descarga el archivo binario (PNG o PDF) de una firma o acta física.
+ */
+const descargarDocumentoHandler = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenant_id
+    const { id, documentoId } = req.params
+
+    const { buffer, mime_type, nombre_archivo } = await descargarDocumentoMediacionService(
+      tenantId,
+      id,
+      documentoId
+    )
+
+    res.setHeader('Content-Type', mime_type)
+    res.setHeader('Content-Disposition', `attachment; filename="${nombre_archivo}"`)
+    res.setHeader('Content-Length', buffer.length)
+    res.send(buffer)
+  } catch (err) {
+    logger.error('Error en descargarDocumentoHandler (mediaciones):', err)
+    next(err)
+  }
+}
+
 module.exports = {
   crearHandler,
   listarHandler,
   obtenerHandler,
   notificarApoderadosHandler,
+  guardarCompromisosHandler,
+  listarCompromisosHandler,
+  descargarActaPdfHandler,
+  despacharActaHandler,
+  evaluarCompromisosHandler,
+  cerrarMediacionHandler,
+  historialEstudianteHandler,
+  listarDocumentosHandler,
+  subirDocumentoHandler,
+  descargarDocumentoHandler,
 }

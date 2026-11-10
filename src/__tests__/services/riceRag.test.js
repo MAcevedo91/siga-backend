@@ -223,6 +223,48 @@ Constituyen faltas graves la reiteración de agresiones verbales o ciberacoso.`
       expect(respuesta).toContain('Se citará al apoderado')
     })
 
+    test('generarRespuestaFallback activa advertencia formativa cuando solo aplican protocolos de la Circular 482', () => {
+      const chunksNacionales = [
+        {
+          articulo: 'Protocolo 1: Ciberacoso y Violencia Digital',
+          seccion: 'CIRCULAR N° 482 — SUPERINTENDENCIA',
+          contenido: 'Notificación inmediata a apoderados en 24 horas y contención emocional.',
+          es_normativa_nacional: true,
+        },
+      ]
+      const respuesta = generarRespuestaFallback('¿Qué hago ante ciberacoso?', chunksNacionales)
+      expect(respuesta).toContain('Circular N° 482 de la Superintendencia de Educación')
+      expect(respuesta).toContain('Recomendación de Gestión')
+      expect(respuesta).toContain('actualizar el RICE del establecimiento')
+    })
+
+    test('consultarRice devuelve tiene_normativa_nacional y marca es_normativa_nacional en fuentes', async () => {
+      supabase.rpc.mockResolvedValueOnce({
+        data: [
+          {
+            id: 'chunk-ciber-482',
+            seccion: 'CIRCULAR N° 482 — TÍTULO I',
+            articulo: 'Protocolo 1: Acoso Escolar y Ciberacoso',
+            contenido: 'Preservación de evidencia digital y citación en 24 horas.',
+            similitud: 0.92,
+            es_normativa_nacional: true,
+          },
+        ],
+        error: null,
+      })
+
+      const res = await consultarRice({
+        tenantId: 'tenant-123',
+        usuarioId: 'user-psicologo',
+        consulta: '¿Qué procedimiento seguir si un alumno sufre ciberacoso en redes sociales?',
+      })
+
+      expect(res).toBeDefined()
+      expect(res.tiene_normativa_nacional).toBe(true)
+      expect(res.fuentes[0].es_normativa_nacional).toBe(true)
+      expect(res.fuentes[0].articulo).toContain('Ciberacoso')
+    })
+
     test('generarOrientacionClimaAulaRICE retorna clima favorable inmediato cuando total es 0', async () => {
       const res = await generarOrientacionClimaAulaRICE({
         tenantId: 'tenant-123',
@@ -259,6 +301,64 @@ Constituyen faltas graves la reiteración de agresiones verbales o ciberacoso.`
       expect(res.recomendacion).toBeDefined()
       expect(res.fuentes.length).toBe(1)
       expect(res.fuentes[0].articulo).toBe('Artículo 28')
+    })
+  })
+
+  describe('4. Circular N° 482 - Normativa Nacional Subsidiaria', () => {
+    const { PROTOCOLOS_CIRCULAR_482, seedCircular482 } = require('../../utils/seedCircular482')
+
+    test('PROTOCOLOS_CIRCULAR_482 define exactamente los 10 protocolos obligatorios oficiales', () => {
+      expect(PROTOCOLOS_CIRCULAR_482).toHaveLength(10)
+
+      const titulos = PROTOCOLOS_CIRCULAR_482.map((p) => p.articulo)
+      expect(titulos.some((t) => t.includes('Ciberacoso'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Adultos a Estudiantes'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Connotación Sexual'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Ideación o Conducta Suicida'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Drogas y Alcohol'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Armas'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Accidentes Escolares'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Embarazadas'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Identidad de Género'))).toBe(true)
+      expect(titulos.some((t) => t.includes('Debido Proceso'))).toBe(true)
+    })
+
+    test('seedCircular482 inserta documento nacional y chunks con tenant_id null', async () => {
+      const mockDoc = { id: 'doc-circular-482', nombre_archivo: 'Circular N° 482 — Superintendencia de Educación' }
+
+      const mockFrom = jest.fn()
+      supabase.from = mockFrom
+
+      mockFrom.mockImplementation((tabla) => {
+        if (tabla === 'rice_documentos') {
+          return {
+            select: jest.fn().mockReturnValue({
+              is: jest.fn().mockReturnValue({
+                eq: jest.fn().mockReturnValue({
+                  maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+                }),
+              }),
+            }),
+            insert: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({ data: mockDoc, error: null }),
+              }),
+            }),
+          }
+        }
+        if (tabla === 'rice_chunks') {
+          return {
+            insert: jest.fn().mockResolvedValue({ data: null, error: null }),
+          }
+        }
+        return {}
+      })
+
+      const resultado = await seedCircular482()
+      expect(resultado).toBeDefined()
+      expect(resultado.status).toBe('success')
+      expect(resultado.totalProtocolos).toBe(10)
+      expect(resultado.documentoId).toBe('doc-circular-482')
     })
   })
 })

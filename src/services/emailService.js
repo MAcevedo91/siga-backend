@@ -7,12 +7,14 @@ const {
   renderInformeOficialApoderadoTemplate
 } = require('../utils/emailTemplates')
 
-async function enviarEmail({ to, cc, bcc, subject, html, text, attachments }) {
+async function enviarEmail({ to, cc, bcc, fromName, replyTo, subject, html, text, attachments }) {
   try {
     const job = await emailQueue.add('send-email', {
       to,
       cc,
       bcc,
+      fromName,
+      replyTo,
       subject,
       html,
       text,

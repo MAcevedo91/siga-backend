@@ -4,25 +4,33 @@ const logger = require('../utils/logger')
 
 // Process email jobs
 emailQueue.process('send-email', async (job) => {
-  const { to, cc, bcc, subject, html, text, attachments } = job.data
+  const { to, cc, bcc, fromName, replyTo, subject, html, text, attachments } = job.data
 
   logger.info('Processing email job', {
     jobId: job.id,
     to,
+    fromName,
+    replyTo,
     subject
   })
 
   try {
     const transporter = getEmailTransporter()
 
+    const defaultFrom = process.env.SMTP_FROM || 'noreply@sigaescolar.cl'
+    const emailMatch = defaultFrom.match(/<([^>]+)>/)
+    const baseEmail = emailMatch ? emailMatch[1] : defaultFrom.trim()
+    const fromHeader = fromName ? `"${fromName.replace(/"/g, '')}" <${baseEmail}>` : defaultFrom
+
     const mailOptions = {
-      from: process.env.SMTP_FROM || 'noreply@sigaescolar.cl',
+      from: fromHeader,
       to,
       subject,
       html,
       text: text || undefined
     }
 
+    if (replyTo) mailOptions.replyTo = replyTo
     if (cc) mailOptions.cc = cc
     if (bcc) mailOptions.bcc = bcc
     if (attachments && Array.isArray(attachments)) {

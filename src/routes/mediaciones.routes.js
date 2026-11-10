@@ -1,10 +1,21 @@
 const { Router } = require('express')
 const requireRole = require('../middlewares/requireRole')
+const { uploadMediacionDocumento } = require('../middlewares/uploadMediacionDocumento')
 const {
   crearHandler,
   listarHandler,
   obtenerHandler,
   notificarApoderadosHandler,
+  guardarCompromisosHandler,
+  listarCompromisosHandler,
+  descargarActaPdfHandler,
+  despacharActaHandler,
+  evaluarCompromisosHandler,
+  cerrarMediacionHandler,
+  historialEstudianteHandler,
+  listarDocumentosHandler,
+  subirDocumentoHandler,
+  descargarDocumentoHandler,
 } = require('../controllers/mediacionesController')
 
 const router = Router()
@@ -21,11 +32,47 @@ router.get(
   listarHandler
 )
 
-// Obtener expediente detallado de una mediación por ID
+// Consultar historial conductual y restaurativo por estudiante (TASK 7.2.4.1)
+// Nota: Se registra antes de /:id para evitar colisión de rutas en Express
+router.get(
+  '/estudiante/:estudianteId',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  historialEstudianteHandler
+)
+
+// Obtener expediente detallado de una mediación por ID (incluye participantes y compromisos)
 router.get(
   '/:id',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
   obtenerHandler
+)
+
+// Generar y descargar Acta Oficial de Mediación Escolar en PDF (TASK 7.2.3.1)
+router.get(
+  '/:id/acta-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  descargarActaPdfHandler
+)
+
+// Despachar transaccionalmente el Acta Oficial en PDF a apoderados y profesores jefes (TASK 7.2.3.2)
+router.post(
+  '/:id/despachar-acta',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  despacharActaHandler
+)
+
+// Evaluar cumplimiento de acuerdos formativos (cumplido, parcial, incumplido - TASK 7.2.4.1)
+router.patch(
+  '/:id/evaluar-compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  evaluarCompromisosHandler
+)
+
+// Sellar y cerrar inmutablemente el expediente de mediación (TASK 7.2.4.1)
+router.patch(
+  '/:id/cerrar',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  cerrarMediacionHandler
 )
 
 // Registrar nueva mediación con participantes
@@ -40,6 +87,46 @@ router.post(
   '/:id/notificar-apoderados',
   requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
   notificarApoderadosHandler
+)
+
+// Listar compromisos y acuerdos formativos vigentes de una mediación (TASK 7.2.2.1)
+router.get(
+  '/:id/compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  listarCompromisosHandler
+)
+
+// Guardar y actualizar atómicamente acuerdos y compromisos formativos (TASK 7.2.2.1)
+router.put(
+  '/:id/compromisos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  guardarCompromisosHandler
+)
+
+// =============================================================================
+// GESTIÓN DOCUMENTAL DE MEDIACIÓN: FIRMAS DIGITALES Y ACTAS FÍSICAS (SPRINT 9)
+// =============================================================================
+
+// Listar documentos y firmas de una mediación
+router.get(
+  '/:id/documentos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  listarDocumentosHandler
+)
+
+// Subir firma digital o acta física firmada (máximo 5 MB, PNG o PDF)
+router.post(
+  '/:id/documentos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector'),
+  uploadMediacionDocumento,
+  subirDocumentoHandler
+)
+
+// Descargar archivo binario de firma o acta física
+router.get(
+  '/:id/documentos/:documentoId',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación', 'Inspector', 'Docente'),
+  descargarDocumentoHandler
 )
 
 module.exports = router

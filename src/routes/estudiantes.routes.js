@@ -12,6 +12,11 @@ const {
   pdfHandler,
   antecedentesEscaladaHandler,
 } = require('../controllers/estudiantesController')
+const {
+  obtenerExpedienteSaludHandler,
+  descargarFichaSaludPdfHandler,
+  listarInformesMedicosEstudianteHandler,
+} = require('../controllers/reporteEspecialistaController')
 
 
 const router = Router()
@@ -69,6 +74,30 @@ router.get('/:id/perfil', cacheMiddleware(600), perfilHandler)
 
 // Análisis predictivo y antecedentes — tiempo real (sin cache para reflejar incidentes inmediatos)
 router.get('/:id/antecedentes-escalada', antecedentesEscaladaHandler)
+
+// Expediente escolar sanitizado para derivación a especialista de salud (TASK 8.2.1.1)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/expediente-salud',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  obtenerExpedienteSaludHandler
+)
+
+// Ficha médica/psicológica oficial en PDF (2 páginas con hash SHA-256) (TASK 8.2.1.2)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/ficha-medica-pdf',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  descargarFichaSaludPdfHandler
+)
+
+// Historial paginado de informes médicos y fichas emitidas para salud (TASK 8.2.2.1)
+// Restricción estricta de autorización para roles directivos y psicosociales
+router.get(
+  '/:id/informes-medicos',
+  requireRole('Administrador', 'Directivo', 'Equipo de Formación'),
+  listarInformesMedicosEstudianteHandler
+)
 
 
 // PDF — solo Administrador y Equipo de Formación

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acta Oficial de Mediación Escolar y Acuerdos Formativos</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 25px 0;">
+    <tr>
+      <td align="center">
+        <table width="620" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); overflow: hidden;">
+          
+          <!-- Header Oficial Institucional -->
+          <tr>
+            <td style="background-color: #1e3a5f; padding: 30px 25px; text-align: center; border-bottom: 4px solid #2563eb;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">ESCUELA COEDUCACIONAL N° 1 EL SALVADOR</h1>
+              <p style="color: #93c5fd; margin: 6px 0 0 0; font-size: 13px;">RBD: 9876-5 — Unidad de Convivencia Escolar y Mediación Formativa</p>
+            </td>
+          </tr>
+
+          <!-- Cuerpo del Mensaje -->
+          <tr>
+            <td style="padding: 30px 30px 20px 30px;">
+              <p style="font-size: 15px; margin: 0 0 15px 0; color: #0f172a;">
+                Estimado/a <strong>{{destinatarioNombre}}</strong> ({{rolDestinatario}}),
+              </p>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+                Junto con saludarle afectuosamente, mediante la presente comunicación formal remitimos la copia digital del <strong>Acta Oficial de Mediación Escolar</strong> correspondiente al proceso llevado a cabo con los estudiantes: <strong>{{estudiantesTexto}}</strong>.
+              </p>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+                Este proceso ha concluido satisfactoriamente con la formalización de compromisos formativos voluntarios y acuerdos de sana convivencia, suscritos por las partes en presencia del equipo de mediación escolar.
+              </p>
+
+              <!-- Tarjeta Resumen del Expediente -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin: 0 0 25px 0;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Folio Oficial:</strong> {{folio}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Fecha de Sesión:</strong> {{fechaSesion}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Lugar:</strong> {{lugarSesion}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Mediador/a a Cargo:</strong> {{mediadorNombre}}
+                    </p>
+                    <p style="margin: 3px 0; font-size: 13px; color: #1e293b;">
+                      <strong style="color: #1e3a5f;">Fecha de Seguimiento Formativo:</strong> {{fechaSeguimiento}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Aviso de Documento Adjunto -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #eff6ff; border-left: 4px solid #2563eb; border-radius: 4px; margin: 0 0 25px 0;">
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <p style="margin: 0; font-size: 13px; color: #1e40af; line-height: 1.5;">
+                      📎 <strong>Documento Adjunto:</strong> Se adjunta a este correo el archivo oficial en PDF (<strong>{{filename}}</strong>) con el detalle íntegro de los acuerdos, plazos y cuadrantes de ratificación para su debida constancia y archivo familiar.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Cláusula Legal de Resguardo -->
+              <div style="background-color: #fefce8; border: 1px solid #fef08a; border-radius: 6px; padding: 12px 16px; margin: 0 0 25px 0;">
+                <p style="margin: 0; font-size: 12px; color: #713f12; line-height: 1.5;">
+                  <strong>Marco Legal y Resguardo de Intimidad:</strong> Este documento se emite en conformidad a la Circular N° 482 de la Superintendencia de Educación, la Ley N° 20.370 y el Reglamento Interno y de Convivencia Escolar (RICE). La información contenida tiene carácter formativo y confidencial, encontrándose amparada por la Ley N° 19.628 de Protección de Datos Personales.
+                </p>
+              </div>
+
+              <!-- Hash Criptográfico SHA-256 -->
+              <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 4px; padding: 10px 14px; margin: 0 0 25px 0;">
+                <p style="margin: 0; font-size: 11px; color: #64748b; font-family: monospace; word-break: break-all;">
+                  <strong>Hash SHA-256 de Verificación Inmutable:</strong><br>{{hashSha256}}
+                </p>
+              </div>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 10px 0;">
+                Agradecemos profundamente su permanente colaboración y compromiso conjunto en la formación socioemocional y la sana convivencia de nuestra comunidad escolar.
+              </p>
+
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 25px 0 0 0;">
+                Atentamente,<br>
+                <strong>Equipo de Convivencia Escolar y Mediación Formativa</strong><br>
+                <span style="font-size: 13px; color: #64748b;">Escuela Coeducacional N° 1 El Salvador</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 18px 25px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Este es un mensaje institucional automático generado por SIGA Escolar para la Escuela El Salvador.<br>
+                Por favor, no responda directamente a este correo automatizado.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

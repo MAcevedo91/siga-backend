@@ -1,6 +1,7 @@
 const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
 const { generarOrientacionClimaAulaRICE } = require('../services/riceRagService')
+const { compilarReporteMensualPDF } = require('../services/reporteMensualPdfService')
 
 // Helper: Get date range for current and previous month
 function getMonthRanges() {
@@ -173,25 +174,74 @@ async function getTopEstudiantes(req, res) {
   try {
     const tenantId = req.user.tenant_id
 
-    const { data, error } = await supabase.rpc('obtener_top_estudiantes_incidentes', {
-      p_tenant_id: tenantId,
-      p_limite: 5
-    })
+    // 1. Obtener incidentes del tenant
+    const { data: incidentes, error: errInc } = await supabase
+      .from('incidentes')
+      .select('id')
+      .eq('tenant_id', tenantId)
 
-    if (error) throw new Error(error.message)
+    if (errInc) throw new Error(errInc.message)
+
+    const incidenteIds = (incidentes || []).map((i) => i.id)
+
+    if (incidenteIds.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+
+    // 2. Obtener los involucrados de esos incidentes en la relación N:M
+    const { data: involucrados, error: errInv } = await supabase
+      .from('incidente_estudiantes')
+      .select('estudiante_id')
+      .in('incidente_id', incidenteIds)
+
+    if (errInv) throw new Error(errInv.message)
+
+    // Contar incidentes por estudiante
+    const conteo = {}
+    for (const inv of (involucrados || [])) {
+      if (inv.estudiante_id) {
+        conteo[inv.estudiante_id] = (conteo[inv.estudiante_id] || 0) + 1
+      }
+    }
+
+    const topIds = Object.keys(conteo)
+      .sort((a, b) => conteo[b] - conteo[a])
+      .slice(0, 5)
+
+    if (topIds.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+
+    // 3. Obtener nombres y cursos de los estudiantes focalizados
+    const { data: estudiantes, error: errEst } = await supabase
+      .from('estudiantes')
+      .select('id, nombre, apellido, curso_id, cursos(nombre)')
+      .in('id', topIds)
+      .eq('tenant_id', tenantId)
+
+    if (errEst) throw new Error(errEst.message)
+
+    const resultado = (estudiantes || []).map((e) => ({
+      id: e.id,
+      estudiante_id: e.id,
+      nombre: e.nombre,
+      apellido: e.apellido,
+      curso_nombre: e.cursos?.nombre || 'Sin curso',
+      cantidad_incidentes: conteo[e.id] || 0,
+    })).sort((a, b) => b.cantidad_incidentes - a.cantidad_incidentes)
 
     res.json({
       success: true,
-      data: data || []
+      data: resultado,
     })
   } catch (error) {
     logger.error('Error al obtener top estudiantes', {
       error: error.message,
-      tenantId: req.user.tenant_id
+      tenantId: req.user.tenant_id,
     })
     res.status(500).json({
       success: false,
-      error: 'Error al obtener top estudiantes'
+      error: 'Error al obtener top estudiantes',
     })
   }
 }
@@ -718,6 +768,153 @@ async function getDetalleCeldaMapaCalor(req, res) {
   }
 }
 
+async function getUsuariosActividad(req, res) {
+  try {
+    const tenantId = req.user.tenant_id
+
+    // 1. Obtener usuarios registrados en el tenant (excluyendo credenciales sensibles)
+    const { data: usuarios, error: errUsuarios } = await supabase
+      .from('usuarios')
+      .select('id, nombre, apellido, email, rol, activo, fecha_creacion')
+      .eq('tenant_id', tenantId)
+      .order('apellido', { ascending: true })
+
+    if (errUsuarios) throw new Error(errUsuarios.message)
+
+    // 2. Obtener incidentes asociados a usuarios en el tenant
+    const { data: incidentes, error: errIncidentes } = await supabase
+      .from('incidentes')
+      .select('id, usuario_id, fecha, fecha_creacion')
+      .eq('tenant_id', tenantId)
+
+    if (errIncidentes) throw new Error(errIncidentes.message)
+
+    // 3. Agregar conteos y último incidente registrado por usuario
+    const conteos = {}
+    const ultimasFechas = {}
+    const totalIncidentesColegio = (incidentes || []).length
+
+    for (const inc of (incidentes || [])) {
+      if (inc.usuario_id) {
+        conteos[inc.usuario_id] = (conteos[inc.usuario_id] || 0) + 1
+        const fechaInc = inc.fecha || inc.fecha_creacion
+        if (!ultimasFechas[inc.usuario_id] || new Date(fechaInc) > new Date(ultimasFechas[inc.usuario_id])) {
+          ultimasFechas[inc.usuario_id] = fechaInc
+        }
+      }
+    }
+
+    const resultado = (usuarios || []).map(u => {
+      const cantidad = conteos[u.id] || 0
+      const porcentaje = totalIncidentesColegio > 0
+        ? Math.round((cantidad / totalIncidentesColegio) * 100)
+        : 0
+
+      return {
+        id: u.id,
+        nombre: u.nombre,
+        apellido: u.apellido,
+        nombreCompleto: `${u.nombre} ${u.apellido}`,
+        email: u.email,
+        rol: u.rol,
+        activo: u.activo,
+        fechaCreacion: u.fecha_creacion,
+        totalIncidentes: cantidad,
+        porcentajeDelTotal: porcentaje,
+        ultimoRegistro: ultimasFechas[u.id] || null
+      }
+    }).sort((a, b) => {
+      if (b.totalIncidentes !== a.totalIncidentes) {
+        return b.totalIncidentes - a.totalIncidentes
+      }
+      return a.apellido.localeCompare(b.apellido)
+    })
+
+    res.json({
+      success: true,
+      data: {
+        totalUsuarios: resultado.length,
+        totalIncidentesRegistrados: totalIncidentesColegio,
+        usuarios: resultado
+      }
+    })
+  } catch (error) {
+    logger.error('Error al obtener actividad de usuarios en analytics:', {
+      error: error.message,
+      tenantId: req.user.tenant_id
+    })
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener actividad de usuarios'
+    })
+  }
+}
+
+async function getPorAbordaje(req, res) {
+  try {
+    const tenantId = req.user.tenant_id
+
+    const { data: incidentes, error } = await supabase
+      .from('incidentes')
+      .select('id, tipo_abordaje_id, tipos_abordaje(nombre)')
+      .eq('tenant_id', tenantId)
+
+    if (error) throw new Error(error.message)
+
+    const conteo = {}
+    for (const inc of (incidentes || [])) {
+      const nombre = inc.tipos_abordaje?.nombre || 'General / Formativo'
+      conteo[nombre] = (conteo[nombre] || 0) + 1
+    }
+
+    const resultado = Object.entries(conteo)
+      .map(([nombre, cantidad]) => ({ nombre, cantidad }))
+      .sort((a, b) => b.cantidad - a.cantidad)
+
+    res.json({
+      success: true,
+      data: resultado
+    })
+  } catch (error) {
+    logger.error('Error al obtener distribución por abordaje:', {
+      error: error.message,
+      tenantId: req.user.tenant_id
+    })
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener distribución por abordaje'
+    })
+  }
+}
+
+async function descargarReporteMensualPdf(req, res) {
+  try {
+    const tenantId = req.user.tenant_id
+    const usuario = req.user
+    const graficos = req.body?.graficos || {}
+
+    const pdfBuffer = await compilarReporteMensualPDF(tenantId, usuario, graficos)
+
+    const now = new Date()
+    const mesStr = now.toLocaleDateString('es-CL', { month: '2-digit', year: 'numeric' }).replace('/', '-')
+    const filename = `Reporte_Ejecutivo_Convivencia_${mesStr}.pdf`
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+    res.end(pdfBuffer)
+  } catch (error) {
+    logger.error('Error al generar Reporte Mensual PDF con IA:', {
+      error: error.message,
+      tenantId: req.user.tenant_id
+    })
+    res.status(500).json({
+      success: false,
+      error: 'Error al generar el reporte mensual en PDF'
+    })
+  }
+}
+
 module.exports = {
   getResumen,
   getTendenciaMensual,
@@ -725,5 +922,8 @@ module.exports = {
   getTopEstudiantes,
   getTiempoResolucion,
   getMapaCalorCursos,
-  getDetalleCeldaMapaCalor
+  getDetalleCeldaMapaCalor,
+  getUsuariosActividad,
+  getPorAbordaje,
+  descargarReporteMensualPdf
 }

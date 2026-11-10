@@ -174,6 +174,72 @@ const actualizarPasoHandler = async (req, res, next) => {
   }
 }
 
+/**
+ * POST /api/v1/protocolos/:id/pasos/:pasoId/evidencias
+ */
+const subirEvidenciaHandler = async (req, res, next) => {
+  try {
+    const evidencia = await protocolosService.subirEvidenciaPaso(
+      req.params.id,
+      req.params.pasoId,
+      req.user.tenant_id,
+      req.user.user_id || req.user.id,
+      req.file,
+      req.ip
+    )
+    res.status(201).json({
+      status: 'success',
+      message: 'Evidencia adjuntada exitosamente',
+      data: evidencia,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * DELETE /api/v1/protocolos/:id/pasos/:pasoId/evidencias/:evidenciaId
+ */
+const eliminarEvidenciaHandler = async (req, res, next) => {
+  try {
+    const resultado = await protocolosService.eliminarEvidenciaPaso(
+      req.params.id,
+      req.params.pasoId,
+      req.params.evidenciaId,
+      req.user.tenant_id,
+      req.user.user_id || req.user.id,
+      req.ip
+    )
+    res.status(200).json({
+      status: 'success',
+      message: 'Evidencia eliminada exitosamente',
+      data: resultado,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/protocolos/:id/expediente-pdf
+ */
+const descargarExpedientePDFHandler = async (req, res, next) => {
+  try {
+    const { pdfBuffer, filename } = await protocolosService.generarPdfExpedienteProtocolo(
+      req.params.id,
+      req.user.tenant_id
+    )
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+    res.setHeader('Content-Length', pdfBuffer.length)
+
+    return res.status(200).send(pdfBuffer)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listarHandler,
   obtenerHandler,
@@ -183,4 +249,8 @@ module.exports = {
   accionesPendientesHandler,
   listarPasosHandler,
   actualizarPasoHandler,
+  subirEvidenciaHandler,
+  eliminarEvidenciaHandler,
+  descargarExpedientePDFHandler,
 }
+

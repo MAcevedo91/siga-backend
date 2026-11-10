@@ -188,28 +188,66 @@ describe('analyticsController', () => {
 
   describe('getTopEstudiantes', () => {
     it('should return top 5 students with most incidents', async () => {
-      const mockData = [
-        { estudiante_id: 1, nombre: 'Juan Pérez', total_incidentes: 8 },
-        { estudiante_id: 2, nombre: 'María González', total_incidentes: 5 }
-      ]
-
-      supabase.rpc = jest.fn().mockResolvedValue({ data: mockData, error: null })
+      supabase.from = jest.fn().mockImplementation((table) => {
+        if (table === 'incidentes') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockResolvedValue({
+                data: [{ id: 'inc-1' }, { id: 'inc-2' }],
+                error: null
+              })
+            })
+          }
+        }
+        if (table === 'incidente_estudiantes') {
+          return {
+            select: jest.fn().mockReturnValue({
+              in: jest.fn().mockResolvedValue({
+                data: [
+                  { estudiante_id: 'est-1' },
+                  { estudiante_id: 'est-1' },
+                  { estudiante_id: 'est-2' }
+                ],
+                error: null
+              })
+            })
+          }
+        }
+        if (table === 'estudiantes') {
+          return {
+            select: jest.fn().mockReturnValue({
+              in: jest.fn().mockReturnValue({
+                eq: jest.fn().mockResolvedValue({
+                  data: [
+                    { id: 'est-1', nombre: 'Juan', apellido: 'Pérez', curso_id: 'c1', cursos: { nombre: '1° Básico' } },
+                    { id: 'est-2', nombre: 'María', apellido: 'González', curso_id: 'c2', cursos: { nombre: '2° Básico' } }
+                  ],
+                  error: null
+                })
+              })
+            })
+          }
+        }
+        return {}
+      })
 
       await analyticsController.getTopEstudiantes(req, res)
 
-      expect(res.json).toHaveBeenCalledWith({
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         success: true,
-        data: mockData
-      })
-
-      expect(supabase.rpc).toHaveBeenCalledWith('obtener_top_estudiantes_incidentes', {
-        p_tenant_id: mockTenantId,
-        p_limite: 5
-      })
+        data: expect.arrayContaining([
+          expect.objectContaining({ estudiante_id: 'est-1', cantidad_incidentes: 2 }),
+          expect.objectContaining({ estudiante_id: 'est-2', cantidad_incidentes: 1 })
+        ])
+      }))
     })
 
     it('should return empty array when no data', async () => {
-      supabase.rpc = jest.fn().mockResolvedValue({ data: null, error: null })
+      supabase.from = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ data: [], error: null })
+        })
+      })
 
       await analyticsController.getTopEstudiantes(req, res)
 
@@ -219,8 +257,12 @@ describe('analyticsController', () => {
       })
     })
 
-    it('should handle RPC errors', async () => {
-      supabase.rpc = jest.fn().mockResolvedValue({ data: null, error: { message: 'RPC failed' } })
+    it('should handle database errors', async () => {
+      supabase.from = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ data: null, error: { message: 'DB Error' } })
+        })
+      })
 
       await analyticsController.getTopEstudiantes(req, res)
 
