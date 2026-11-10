@@ -193,6 +193,8 @@ describe('TASK 10.2.2 — Dispatcher Automático de Copias de Citación por Corr
       expect(emailService.enviarEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'carmen.alarcon@correo.cl',
+          fromName: 'Prof. Mario Casas (vía SIGA Escolar)',
+          replyTo: 'mario.casas@escuelaelsalvador.cl',
           subject: expect.stringContaining('CIT-2026-0088'),
           attachments: [
             expect.objectContaining({

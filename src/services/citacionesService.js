@@ -130,6 +130,19 @@ const crearCitacion = async (tenantId, docenteId, body) => {
     throw err
   }
 
+  // 2.1 Obtener datos del docente convocante para remitente personalizado y Reply-To
+  let docenteInfo = null
+  try {
+    const { data: docData } = await supabase
+      .from('usuarios')
+      .select('id, nombre, apellido, email, rol')
+      .eq('id', docenteId)
+      .maybeSingle()
+    docenteInfo = docData
+  } catch (docErr) {
+    logger.warn('No se pudieron obtener datos del docente para remitente de citación:', docErr.message)
+  }
+
   // 3. Generar token criptográfico seguro y expiración a 72 horas
   const tokenConfirmacion = crypto.randomUUID()
   const tokenExpiraAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
@@ -182,8 +195,18 @@ const crearCitacion = async (tenantId, docenteId, body) => {
     try {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
       const enlaceMovil = `${frontendUrl}/citaciones/confirmacion/${tokenConfirmacion}`
+      
+      const docenteNombre = docenteInfo?.nombre
+        ? `${docenteInfo.nombre} ${docenteInfo.apellido || ''}`.trim()
+        : 'Docente Convocante'
+      const fromName = `${docenteNombre} (vía SIGA Escolar)`
+      const replyTo = docenteInfo?.email || undefined
+
       await emailService.enviarEmail({
         to: apoderado.email,
+        cc: docenteInfo?.email || undefined,
+        fromName,
+        replyTo,
         subject: `[SIGA Escolar] Convocatoria a Entrevista Formativa — ${estudiante.nombre} ${estudiante.apellido}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">

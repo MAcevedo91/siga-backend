@@ -210,6 +210,18 @@ describe('TASK 10.1.2 — Endpoints de Programación y Confirmación Móvil sin 
             }),
           }
         }
+        if (tabla === 'usuarios') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                maybeSingle: jest.fn().mockResolvedValue({
+                  data: { id: mockDocenteId, nombre: 'Prof. Mario', apellido: 'Casas', email: 'mario.casas@escuelaelsalvador.cl' },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
       })
 
       const resultado = await crearCitacion(mockTenantId, mockDocenteId, {
@@ -226,6 +238,8 @@ describe('TASK 10.1.2 — Endpoints de Programación y Confirmación Móvil sin 
       expect(emailService.enviarEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'carlos@ejemplo.com',
+          fromName: 'Prof. Mario Casas (vía SIGA Escolar)',
+          replyTo: 'mario.casas@escuelaelsalvador.cl',
           subject: expect.stringMatching(/Convocatoria a Entrevista Formativa/i),
         })
       )

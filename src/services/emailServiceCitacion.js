@@ -249,8 +249,13 @@ const despacharActaOficialCitacion = async ({ tenantId, citacionId, usuarioId })
 
       const subject = `[SIGA Escolar] Acta Oficial de Compromisos Familia-Escuela — Folio ${citacion.folio || 'CIT-2026'}`
 
+      const fromName = docenteNombre ? `${docenteNombre} (vía SIGA Escolar)` : 'SIGA Escolar — Escuela El Salvador'
+      const replyTo = citacionFormateada.docente?.email || undefined
+
       await emailService.enviarEmail({
         to: dest.email,
+        fromName,
+        replyTo,
         subject,
         html,
         attachments,

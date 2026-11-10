@@ -84,6 +84,9 @@ CREATE TABLE estudiantes (
     es_pie           BOOLEAN NOT NULL DEFAULT FALSE,
     direccion        VARCHAR(255),
     activo           BOOLEAN NOT NULL DEFAULT TRUE,
+    avatar_url       VARCHAR(500),
+    genero           VARCHAR(20) DEFAULT 'No especificado',
+    estado_matricula VARCHAR(30) DEFAULT 'activa',
     CONSTRAINT unique_rut_per_tenant UNIQUE (tenant_id, rut)
 );
 
