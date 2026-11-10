@@ -66,10 +66,12 @@ BEGIN
     INNER JOIN rice_documentos rd ON rc.documento_id = rd.id
     WHERE (rc.tenant_id = p_tenant_id OR rc.tenant_id IS NULL)
       AND rd.estado = 'activo'
+      AND rc.contenido NOT ILIKE '%.....%'
       AND (1 - (rc.embedding <=> p_embedding)) >= p_similarity_threshold
     ORDER BY
-        (rc.tenant_id = p_tenant_id) DESC, -- Prioriza fragmentos específicos del establecimiento
-        rc.embedding <=> p_embedding ASC     -- Y luego mayor similitud semántica coseno
+        ROUND((1 - (rc.embedding <=> p_embedding))::numeric, 1) DESC, -- Prioriza el nivel de relevancia semántica
+        (rc.tenant_id = p_tenant_id) DESC,                             -- A igualdad de relevancia, prefiere normativa local
+        rc.embedding <=> p_embedding ASC                               -- Mayor afinidad coseno
     LIMIT p_match_count;
 END;
 $$;
