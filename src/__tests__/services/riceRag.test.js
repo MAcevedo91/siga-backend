@@ -299,6 +299,31 @@ Constituyen faltas graves la reiteración de agresiones verbales o ciberacoso.`
       expect(res.fuentes[0].contenido).not.toContain('PRESENTACIÓN')
     })
 
+    test('consultarRice expone modo de ejecución (fallback en tests) y motivo_fallback', async () => {
+      supabase.rpc.mockResolvedValueOnce({
+        data: [
+          {
+            id: 'chunk-1',
+            seccion: 'Sección 1',
+            articulo: 'Art. 1',
+            contenido: 'Protocolo de actuación inmediata.',
+            similitud: 0.85,
+            es_normativa_nacional: false,
+          },
+        ],
+        error: null,
+      })
+
+      const res = await consultarRice({
+        tenantId: 'tenant-123',
+        usuarioId: 'user-director',
+        consulta: 'Procedimiento de actuación',
+      })
+
+      expect(res.modo).toBe('fallback')
+      expect(res.motivo_fallback).toBeDefined()
+    })
+
     test('generarOrientacionClimaAulaRICE retorna clima favorable inmediato cuando total es 0', async () => {
       const res = await generarOrientacionClimaAulaRICE({
         tenantId: 'tenant-123',

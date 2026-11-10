@@ -35,6 +35,31 @@ const esChunkDeIndice = (chunk) => {
 }
 
 /**
+ * Limpia y normaliza el texto de un fragmento normativo para evitar cortes abruptos
+ * o caracteres huérfanos sin alterar el contenido legal original.
+ */
+const limpiarContenidoFragmento = (texto = '') => {
+  if (!texto) return ''
+  let limpio = texto
+    .replace(/^(\.\.\.|\.\s*)+/g, '') // Quitar puntos suspensivos iniciales huérfanos
+    .replace(/(\.\.\.|\.\s*)+$/g, '.') // Normalizar final
+    .replace(/\n{3,}/g, '\n\n') // Reducir saltos excesivos
+    .trim()
+
+  // Si supera 900 caracteres, recortar respetando el final de una oración completa
+  if (limpio.length > 900) {
+    const corte = limpio.slice(0, 900)
+    const ultimoPunto = corte.lastIndexOf('.')
+    if (ultimoPunto > 400) {
+      limpio = corte.slice(0, ultimoPunto + 1)
+    } else {
+      limpio = corte + '...'
+    }
+  }
+  return limpio
+}
+
+/**
  * Genera una respuesta estructurada de contingencia (fallback) basada en los chunks recuperados
  * cuando la API de Gemini no está disponible o no hay API Key configurada.
  */
@@ -43,29 +68,40 @@ const generarRespuestaFallback = (pregunta, chunks = []) => {
   const chunksAProcesar = chunksValidos.length > 0 ? chunksValidos : chunks
 
   if (!chunksAProcesar || chunksAProcesar.length === 0) {
-    return 'No se encontraron artículos o procedimientos específicos en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta. Se recomienda consultar directamente con el Encargado/a de Convivencia Escolar o la Dirección del establecimiento.'
+    return 'Estimado/a funcionario/a: Tras consultar el contexto normativo disponible, le informo que **No se encontraron artículos o procedimientos específicos** en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta.\n\nLe recomendamos consultar directamente con el **Encargado/a de Convivencia Escolar o con la Dirección del establecimiento**, quienes cuentan con el documento íntegro.'
   }
 
   const tieneNormativaNacional = chunksAProcesar.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
   const tieneNormativaLocal = chunksAProcesar.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
 
-  const resumenArticulos = chunksAProcesar
-    .map((c) => {
-      const esNacional = Boolean(c.es_normativa_nacional || c.tenant_id === null)
-      const origen = esNacional ? 'Circular N° 482 Superintendencia' : 'RICE Establecimiento'
-      return `• **${c.articulo || 'Artículo'}** [${origen}] (${c.seccion || 'Normativa'}):\n  "${c.contenido.slice(0, 300)}..."`
-    })
-    .join('\n\n')
-
-  let encabezado = 'Orientación preliminar basada en los fragmentos vigentes del RICE del establecimiento:'
-  let pie = '\n\n*Nota: Para detalles adicionales de plazos y debidos procesos, verifique los artículos citados en el documento institucional oficial.*'
+  let encabezado = 'Estimado/a funcionario/a:\n\nA continuación, se detalla el procedimiento y las directrices normativas identificadas en el **Reglamento Interno y de Convivencia Escolar (RICE)** de la Escuela Coeducacional N° 1 El Salvador para orientar su actuación:'
 
   if (tieneNormativaNacional && !tieneNormativaLocal) {
-    encabezado = 'Orientación normativa subsidiaria basada en la Circular N° 482 de la Superintendencia de Educación (aplicada de forma supletoria ante ausencia de protocolo específico en el RICE del colegio):'
-    pie = '\n\n*Recomendación de Gestión*: Conforme a las directrices de la Superintendencia de Educación, se recomienda al Encargado/a de Convivencia Escolar actualizar el RICE del establecimiento para incorporar formalmente este protocolo obligatorio.'
+    encabezado = 'Estimado/a funcionario/a:\n\nDado que en el RICE del establecimiento no se visualiza un protocolo específico para esta materia, **se aplica de forma supletoria y obligatoria la Circular N° 482 de la Superintendencia de Educación**, la cual fija los estándares mínimos de convivencia escolar a nivel nacional:'
   }
 
-  return `${encabezado}\n\n${resumenArticulos}${pie}`
+  const detalleArticulos = chunksAProcesar
+    .map((c, idx) => {
+      const esNacional = Boolean(c.es_normativa_nacional || c.tenant_id === null)
+      const origen = esNacional ? 'Circular N° 482 — Superintendencia' : 'RICE Establecimiento'
+      const tituloArticulo = c.articulo ? c.articulo.trim() : `Artículo ${idx + 1}`
+      const seccion = c.seccion ? ` (${c.seccion})` : ''
+      const textoLimpio = limpiarContenidoFragmento(c.contenido)
+
+      return `### ${idx + 1}. ${tituloArticulo} [${origen}]${seccion}\n\n${textoLimpio}`
+    })
+    .join('\n\n---\n\n')
+
+  let recomendacionesGenerales = `\n\n### Consideraciones Clave del Debido Proceso Escolar:
+• **Plazos de Notificación:** Citar e informar a los apoderados en un plazo máximo de **24 horas** desde que se toma conocimiento de la situación.
+• **Derecho a ser Escuchado:** Realizar entrevistas individuales garantizando el derecho a descargos de los estudiantes, evitando confrontaciones directas entre las partes.
+• **Obligación Legal de Denuncia:** Si la situación reviste carácter de presunto delito (agresiones graves, abuso sexual, porte de armas), la Dirección tiene el deber de denunciar ante Carabineros, PDI o Fiscalía dentro de las **24 horas siguientes** (Art. 175 letra e del Código Procesal Penal).`
+
+  if (tieneNormativaNacional && !tieneNormativaLocal) {
+    recomendacionesGenerales += `\n\n***\n\n> ⚠️ **Recomendación de Gestión Institucional:** Al haberse aplicado la **Circular N° 482 de manera subsidiaria**, se sugiere expresamente al Encargado/a de Convivencia Escolar y al Equipo Directivo actualizar el RICE del establecimiento incorporando formalmente este protocolo obligatorio para asegurar el debido proceso local.`
+  }
+
+  return `${encabezado}\n\n${detalleArticulos}${recomendacionesGenerales}`
 }
 
 /**
@@ -176,8 +212,17 @@ const consultarRice = async ({
   const apiKey = process.env.GEMINI_API_KEY
   const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
   let respuestaFinal = ''
+  let modoEjecucion = 'ia_gemini'
+  let motivoFallback = null
 
   if (!apiKey || apiKey === 'your-gemini-api-key' || process.env.NODE_ENV === 'test') {
+    modoEjecucion = 'fallback'
+    motivoFallback = !apiKey || apiKey === 'your-gemini-api-key'
+      ? 'GEMINI_API_KEY no detectada en las variables de entorno del servidor (Render)'
+      : 'Modo de pruebas automatizadas (NODE_ENV=test)'
+    if (!apiKey || apiKey === 'your-gemini-api-key') {
+      logger.warn('[RAG] GEMINI_API_KEY no detectada en process.env. Activando fallback determinista estructurado.')
+    }
     respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
   } else {
     try {
@@ -235,10 +280,14 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
       }
 
       if (!respuestaFinal) {
+        modoEjecucion = 'fallback'
+        motivoFallback = errorGeneracion ? `Error de generación LLM: ${errorGeneracion.message}` : 'Modelos Gemini no respondieron'
         logger.error('No se pudo generar respuesta con Gemini Flash, recurriendo a fallback', errorGeneracion)
         respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
       }
     } catch (llmErr) {
+      modoEjecucion = 'fallback'
+      motivoFallback = `Error en cliente LLM: ${llmErr.message}`
       logger.error('Error en pipeline de inferencia LLM RAG:', llmErr)
       respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
     }
@@ -254,6 +303,7 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
       detalles: {
         total_fuentes_encontradas: chunksRecuperados.length,
         consulta_sanitizada: consultaLimpia.slice(0, 150),
+        modo_ejecucion: modoEjecucion,
       },
     })
   } catch (auditErr) {
@@ -272,6 +322,8 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
     })),
     totalFuentes: chunksRecuperados.length,
     tiene_normativa_nacional: chunksRecuperados.some((c) => Boolean(c.es_normativa_nacional)),
+    modo: modoEjecucion,
+    motivo_fallback: motivoFallback,
   }
 }
 
