@@ -42,31 +42,24 @@ const start = async () => {
   // Verificar conexión a Supabase antes de levantar el servidor
   await testConnection()
 
-  // Create HTTP server for Express
+  // Create HTTP server for Express and Socket.io (unificado en un único puerto para Render y producción)
   const httpServer = http.createServer(app)
+  await initSocketServer(httpServer)
 
-  // Create separate HTTP server for Socket.io
-  const socketHttpServer = http.createServer()
-  await initSocketServer(socketHttpServer)
-
-  // Start both servers
+  // Start unified HTTP and WebSocket server
   httpServer.listen(PORT, () => {
     logger.info('Server started', {
       port: PORT,
       environment: process.env.NODE_ENV,
       healthCheck: `http://localhost:${PORT}/api/v1/health`
     })
-  })
-
-  socketHttpServer.listen(SOCKET_PORT, () => {
-    logger.info(`WebSocket server running on port ${SOCKET_PORT}`)
+    logger.info(`WebSocket server running unified on port ${PORT}`)
   })
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {
     logger.info('SIGTERM received, closing servers gracefully')
     httpServer.close()
-    socketHttpServer.close()
     await mensajeOfflineQueue.close()
     await broadcastQueue.close()
   })

@@ -6,9 +6,16 @@ const logger = require('../utils/logger')
 let io = null
 
 async function initSocketServer(httpServer) {
+  const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'https://siga-frontend-delta-six.vercel.app'
+  ].filter(Boolean)
+
   io = new Server(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      origin: allowedOrigins,
       credentials: true
     }
   })

@@ -2,7 +2,7 @@ const { supabase } = require('../utils/db')
 const { getIO } = require('../sockets')
 const logger = require('../utils/logger')
 
-async function crearNotificacion({ userId, tenantId, tipo, titulo, mensaje, url = null }) {
+async function crearNotificacion({ userId, tenantId, tipo, titulo, mensaje, url = null, metadata = {} }) {
   try {
     const { data, error } = await supabase
       .from('notificaciones')
@@ -13,6 +13,7 @@ async function crearNotificacion({ userId, tenantId, tipo, titulo, mensaje, url 
         titulo,
         mensaje,
         url,
+        metadata,
         leida: false
       })
       .select()
@@ -20,9 +21,18 @@ async function crearNotificacion({ userId, tenantId, tipo, titulo, mensaje, url 
 
     if (error) throw new Error(error.message)
 
-    // Emit socket event to user
-    const io = getIO()
-    io.to(`user-${userId}`).emit('notificacion:nueva', data)
+    // Emit socket event to user room with graceful fallback
+    try {
+      const io = getIO()
+      if (io) {
+        io.to(`user-${userId}`).emit('notificacion:nueva', data)
+      }
+    } catch (sockErr) {
+      logger.warn('Socket no disponible para emitir notificación en tiempo real, persistida en BD', {
+        userId,
+        error: sockErr.message
+      })
+    }
 
     logger.info('Notificación creada y emitida', {
       notificacionId: data.id,
@@ -34,6 +44,72 @@ async function crearNotificacion({ userId, tenantId, tipo, titulo, mensaje, url 
   } catch (error) {
     logger.error('Error al crear notificación', { error: error.message, userId, tipo })
     throw error
+  }
+}
+
+/**
+ * Notifica a todos los usuarios activos que posean alguno de los roles indicados dentro del tenant.
+ */
+async function notificarUsuariosPorRol({ tenantId, roles, tipo, titulo, mensaje, url = null, metadata = {} }) {
+  try {
+    const { data: usuarios, error } = await supabase
+      .from('usuarios')
+      .select('id, rol')
+      .eq('tenant_id', tenantId)
+      .eq('activo', true)
+      .in('rol', roles)
+
+    if (error || !usuarios || usuarios.length === 0) return []
+
+    const promesas = usuarios.map(usuario =>
+      crearNotificacion({
+        userId: usuario.id,
+        tenantId,
+        tipo,
+        titulo,
+        mensaje,
+        url,
+        metadata
+      }).catch(err => {
+        logger.error('Error al notificar usuario por rol', { error: err.message, userId: usuario.id })
+        return null
+      })
+    )
+
+    const resultados = await Promise.all(promesas)
+    return resultados.filter(Boolean)
+  } catch (error) {
+    logger.error('Error en notificarUsuariosPorRol', { error: error.message, roles, tenantId })
+    return []
+  }
+}
+
+/**
+ * Notifica al profesor jefe del curso al que pertenece el estudiante (si tiene uno asignado).
+ */
+async function notificarJefaturaEstudiante({ tenantId, estudianteId, tipo, titulo, mensaje, url = null, metadata = {} }) {
+  try {
+    const { data: estudiante, error: estErr } = await supabase
+      .from('estudiantes')
+      .select('id, nombre, apellido, curso_id, cursos(id, nombre, profesor_jefe_id)')
+      .eq('id', estudianteId)
+      .eq('tenant_id', tenantId)
+      .single()
+
+    if (estErr || !estudiante?.cursos?.profesor_jefe_id) return null
+
+    return await crearNotificacion({
+      userId: estudiante.cursos.profesor_jefe_id,
+      tenantId,
+      tipo,
+      titulo,
+      mensaje,
+      url,
+      metadata
+    })
+  } catch (error) {
+    logger.error('Error en notificarJefaturaEstudiante', { error: error.message, estudianteId })
+    return null
   }
 }
 
@@ -94,6 +170,8 @@ async function marcarTodasComoLeidas(userId, tenantId) {
 
 module.exports = {
   crearNotificacion,
+  notificarUsuariosPorRol,
+  notificarJefaturaEstudiante,
   obtenerNotificaciones,
   marcarComoLeida,
   contarNoLeidas,
