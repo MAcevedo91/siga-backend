@@ -3,7 +3,7 @@ const logger = require('../utils/logger')
 
 async function obtenerMisNotificaciones(req, res) {
   try {
-    const userId = req.user.id
+    const userId = req.user.user_id || req.user.id
     const tenantId = req.user.tenant_id
 
     const notificaciones = await notificacionesService.obtenerNotificaciones(userId, tenantId)
@@ -15,7 +15,7 @@ async function obtenerMisNotificaciones(req, res) {
   } catch (error) {
     logger.error('Error al obtener notificaciones', {
       error: error.message,
-      userId: req.user.id
+      userId: req.user?.user_id || req.user?.id
     })
     res.status(500).json({
       success: false,
@@ -27,9 +27,11 @@ async function obtenerMisNotificaciones(req, res) {
 async function marcarComoLeida(req, res) {
   try {
     const { id } = req.params
-    const userId = req.user.id
+    const userId = req.user.user_id || req.user.id
+    // Acepta tanto identificadores UUID como numéricos
+    const notificacionId = /^\d+$/.test(id) ? parseInt(id, 10) : id
 
-    await notificacionesService.marcarComoLeida(parseInt(id), userId)
+    await notificacionesService.marcarComoLeida(notificacionId, userId)
 
     res.json({
       success: true,
@@ -49,7 +51,7 @@ async function marcarComoLeida(req, res) {
 
 async function obtenerContadorNoLeidas(req, res) {
   try {
-    const userId = req.user.id
+    const userId = req.user.user_id || req.user.id
 
     const count = await notificacionesService.contarNoLeidas(userId)
 
@@ -60,7 +62,7 @@ async function obtenerContadorNoLeidas(req, res) {
   } catch (error) {
     logger.error('Error al contar notificaciones no leídas', {
       error: error.message,
-      userId: req.user.id
+      userId: req.user?.user_id || req.user?.id
     })
     res.status(500).json({
       success: false,
@@ -71,7 +73,7 @@ async function obtenerContadorNoLeidas(req, res) {
 
 async function marcarTodasComoLeidas(req, res) {
   try {
-    const userId = req.user.id
+    const userId = req.user.user_id || req.user.id
     const tenantId = req.user.tenant_id
 
     await notificacionesService.marcarTodasComoLeidas(userId, tenantId)
@@ -83,7 +85,7 @@ async function marcarTodasComoLeidas(req, res) {
   } catch (error) {
     logger.error('Error al marcar todas como leídas', {
       error: error.message,
-      userId: req.user.id
+      userId: req.user?.user_id || req.user?.id
     })
     res.status(500).json({
       success: false,

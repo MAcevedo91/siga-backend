@@ -135,4 +135,82 @@ describe('Notificaciones Service', () => {
       expect(count).toBe(5)
     })
   })
+
+  describe('marcarTodasComoLeidas', () => {
+    it('debe marcar todas las notificaciones pendientes del usuario como leídas', async () => {
+      const mockChain = {
+        eq: jest.fn().mockReturnThis()
+      }
+      mockChain.eq
+        .mockReturnValueOnce(mockChain)
+        .mockReturnValueOnce(mockChain)
+        .mockResolvedValueOnce({ error: null })
+
+      supabase.from.mockReturnValue({
+        update: jest.fn().mockReturnValue(mockChain)
+      })
+
+      await expect(notificacionesService.marcarTodasComoLeidas('user-uuid', 'tenant-uuid')).resolves.not.toThrow()
+      expect(supabase.from).toHaveBeenCalledWith('notificaciones')
+    })
+  })
+
+  describe('notificarUsuariosPorRol', () => {
+    it('debe buscar usuarios por rol y crear una notificación para cada uno', async () => {
+      const mockUsuarios = [
+        { id: 'user-admin-1', rol: 'Administrador' },
+        { id: 'user-directivo-1', rol: 'Directivo' }
+      ]
+
+      supabase.from.mockImplementation((tabla) => {
+        if (tabla === 'usuarios') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            in: jest.fn().mockResolvedValue({ data: mockUsuarios, error: null })
+          }
+        }
+        if (tabla === 'notificaciones') {
+          return {
+            insert: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({ data: { id: 'notif-uuid', leida: false }, error: null })
+              })
+            })
+          }
+        }
+      })
+
+      const resultados = await notificacionesService.notificarUsuariosPorRol({
+        tenantId: 'tenant-123',
+        roles: ['Administrador', 'Directivo'],
+        tipo: 'incidente',
+        titulo: 'Incidente Grave',
+        mensaje: 'Se registró una incidencia',
+        url: '/incidentes/uuid-1'
+      })
+
+      expect(resultados).toHaveLength(2)
+      expect(mockIO.to).toHaveBeenCalledWith('user-user-admin-1')
+      expect(mockIO.to).toHaveBeenCalledWith('user-user-directivo-1')
+    })
+
+    it('debe retornar arreglo vacío si no encuentra usuarios con esos roles', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValue({ data: [], error: null })
+      })
+
+      const resultados = await notificacionesService.notificarUsuariosPorRol({
+        tenantId: 'tenant-123',
+        roles: ['Inspector'],
+        tipo: 'sistema',
+        titulo: 'Test',
+        mensaje: 'Sin usuarios'
+      })
+
+      expect(resultados).toEqual([])
+    })
+  })
 })

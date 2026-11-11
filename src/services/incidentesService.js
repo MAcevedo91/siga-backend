@@ -227,12 +227,16 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
       })
     }
 
-    // Create notifications for admins and coordinadores
+    // Create notifications for authorized roles based on severity
+    const rolesNotificar = (gravedad === 'Grave' || gravedad === 'Gravísima')
+      ? ['Administrador', 'Directivo', 'Equipo de Formación', 'Inspector']
+      : ['Equipo de Formación', 'Inspector']
+
     const { data: usuarios } = await supabase
       .from('usuarios')
       .select('id')
       .eq('tenant_id', tenantId)
-      .in('rol', ['Administrador', 'Coordinador'])
+      .in('rol', rolesNotificar)
 
     if (usuarios) {
       for (const usuario of usuarios) {
@@ -242,7 +246,8 @@ const crearIncidente = async (tenantId, usuarioId, body) => {
           tipo: 'incidente',
           titulo: `Nuevo incidente ${gravedad}`,
           mensaje: `Se ha registrado un nuevo incidente: ${relato.substring(0, 100)}${relato.length > 100 ? '...' : ''}`,
-          url: `/incidentes/${incidente.id}`
+          url: `/incidentes/${incidente.id}`,
+          metadata: { incidenteId: incidente.id, gravedad }
         }).catch(err => {
           logger.error('Error creating notification', {
             error: err.message,

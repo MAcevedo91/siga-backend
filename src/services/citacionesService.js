@@ -428,6 +428,37 @@ const responderCitacionPublica = async (body) => {
     logger.warn('Advertencia: Falló auditoría de respuesta a citación:', auditErr.message)
   }
 
+  // 6. Notificación en tiempo real al docente o funcionario citador
+  try {
+    const notificacionesService = require('./notificacionesService')
+    const titulos = {
+      confirmar: 'Citación Confirmada por Apoderado',
+      reprogramar: 'Solicitud de Reagendamiento de Citación',
+      justificar: 'Inasistencia Justificada a Citación'
+    }
+    const fechaHora = citacion.fecha_hora_programada
+      ? new Date(citacion.fecha_hora_programada).toLocaleString('es-CL')
+      : ''
+
+    const mensajeNotif = accion === 'confirmar'
+      ? `El apoderado ha confirmado su asistencia a la citación ${citacion.folio || ''} para el ${fechaHora}.`
+      : accion === 'reprogramar'
+      ? `El apoderado solicita reprogramar la citación ${citacion.folio || ''}. Comentario: "${comentario || 'Sin comentario'}"`
+      : `El apoderado justificó inasistencia a la citación ${citacion.folio || ''}. Motivo: "${comentario || 'Sin motivo'}"`
+
+    await notificacionesService.crearNotificacion({
+      userId: citacion.docente_id,
+      tenantId: citacion.tenant_id,
+      tipo: 'citacion',
+      titulo: titulos[accion] || 'Actualización de Citación Formativa',
+      mensaje: mensajeNotif,
+      url: '/citaciones',
+      metadata: { citacionId: citacion.id, folio: citacion.folio, accion }
+    })
+  } catch (notifErr) {
+    logger.warn('Advertencia: No se pudo generar notificación para el citador:', notifErr.message)
+  }
+
   return {
     mensaje:
       accion === 'confirmar'

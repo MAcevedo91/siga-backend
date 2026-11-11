@@ -116,7 +116,23 @@ const crearMediacion = async (tenantId, mediadorId, body) => {
     logger.warn('Advertencia: No se pudo registrar auditoría de mediación:', auditErr.message)
   }
 
-  // 5. Retornar mediación completa consolidada
+  // 5. Notificar a integrantes del Equipo de Formación
+  try {
+    const notificacionesService = require('./notificacionesService')
+    await notificacionesService.notificarUsuariosPorRol({
+      tenantId,
+      roles: ['Equipo de Formación'],
+      tipo: 'mediacion',
+      titulo: 'Nueva Mediación Escolar Asignada',
+      mensaje: `Se ha aperturado un proceso de mediación escolar (${mediacion.folio || 'En trámite'}) con ${participantesRows.length} estudiantes participantes.`,
+      url: `/mediaciones/${mediacion.id}`,
+      metadata: { mediacionId: mediacion.id, folio: mediacion.folio }
+    })
+  } catch (notifErr) {
+    logger.warn('Advertencia: No se pudo generar notificación de mediación:', notifErr.message)
+  }
+
+  // 6. Retornar mediación completa consolidada
   return obtenerMediacionPorId(tenantId, mediacion.id)
 }
 

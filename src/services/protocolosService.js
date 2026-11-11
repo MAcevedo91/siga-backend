@@ -256,12 +256,12 @@ const crearProtocolo = async (tenantId, usuarioId, body) => {
     })
   }
 
-  // 5. Create notifications for admins and coordinadores
+  // 5. Create notifications for admins, directivos and equipo de formación
   const { data: usuarios } = await supabase
     .from('usuarios')
     .select('id')
     .eq('tenant_id', tenantId)
-    .in('rol', ['Administrador', 'Coordinador'])
+    .in('rol', ['Administrador', 'Directivo', 'Equipo de Formación'])
 
   if (usuarios) {
     for (const usr of usuarios) {
