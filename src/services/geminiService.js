@@ -102,7 +102,13 @@ const generarPropuestaReporteIA = async (incidente, estudianteFocoId) => {
     logger.warn('GEMINI_API_KEY no configurada. Utilizando fallback local normativo.')
     reporteConTokens = generarPlantillaFallback(incidente, estudianteFoco, promptSanitizado)
   } else {
-    const ai = new GoogleGenAI({ apiKey })
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        timeout: 6000,
+        retryOptions: { attempts: 1 },
+      },
+    })
 
     const promptContenido = `
 Fecha del Incidente: ${promptSanitizado.fechaIncidente}
@@ -126,43 +132,46 @@ Instrucción: Genera el borrador del informe estructurado en formato JSON enfoca
 
     const candidateModels = [
       modelName,
-      'gemini-3-flash-preview',
-      'gemini-3.8-flash',
-    ].filter((m, i, arr) => arr.indexOf(m) === i)
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash-lite',
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
-    let ultimoError = null
-    for (const m of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model: m,
-          contents: promptContenido,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION_REPORTE,
-            responseMimeType: 'application/json',
-            responseJsonSchema: JSON_SCHEMA_REPORTE,
-            temperature: 0.2, // Baja temperatura para apego factual y determinismo
-          },
-        })
+    const tareaGeneracion = (async () => {
+      let errUltimo = null
+      for (const m of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: m,
+            contents: promptContenido,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION_REPORTE,
+              responseMimeType: 'application/json',
+              responseJsonSchema: JSON_SCHEMA_REPORTE,
+              temperature: 0.2, // Baja temperatura para apego factual y determinismo
+            },
+          })
 
-        const textoRespuesta = response.text
-        if (textoRespuesta) {
-          reporteConTokens = JSON.parse(textoRespuesta)
-          ultimoError = null
-          break
+          const textoRespuesta = response.text
+          if (textoRespuesta) {
+            return JSON.parse(textoRespuesta)
+          }
+        } catch (err) {
+          errUltimo = err
+          logger.warn(`Modelo ${m} no disponible (${err.status || err.message}). Evaluando alternativa...`)
         }
-      } catch (err) {
-        ultimoError = err
-        logger.warn(`Modelo ${m} no disponible temporalmente (${err.status || err.message}). Evaluando alternativa...`)
       }
-    }
+      return null
+    })()
+
+    const timeoutGuard = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 6500)
+      if (timer?.unref) timer.unref()
+    })
+    reporteConTokens = await Promise.race([tareaGeneracion, timeoutGuard])
 
     if (!reporteConTokens) {
-      const errMsg = ultimoError?.message || ultimoError?.toString() || 'Error desconocido'
-      logger.error(`Error al invocar Google Gemini Flash API: ${errMsg}`, { error: ultimoError?.stack || ultimoError })
-      console.error('\n⚠️  [DETALLE ERROR GEMINI API]:', errMsg)
-      if (ultimoError?.status) console.error('   Código de Estado HTTP:', ultimoError.status)
-      if (ultimoError?.errorDetails) console.error('   Detalles:', JSON.stringify(ultimoError.errorDetails))
-      // Degradación grácil ante fallos de conectividad o cuota de API
+      logger.warn('Generación con IA excedió límite o falló en modelos. Activando fallback local normativo.')
       reporteConTokens = generarPlantillaFallback(incidente, estudianteFoco, promptSanitizado)
     }
   }
