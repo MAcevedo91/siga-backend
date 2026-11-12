@@ -33,31 +33,55 @@ const generarEmbeddingTexto = async (texto = '') => {
   }
 
   const candidateModels = [
+    'text-embedding-004',
     'gemini-embedding-001',
-    'gemini-embedding-2',
   ]
 
-  for (const model of candidateModels) {
-    try {
-      const ai = new GoogleGenAI({ apiKey })
-      const response = await ai.models.embedContent({
-        model,
-        contents: texto,
-        config: {
-          outputDimensionality: 768,
-        },
-      })
+  const tareaGeneracionEmbedding = (async () => {
+    for (const model of candidateModels) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            timeout: 3000,
+            retryOptions: { attempts: 1 },
+          },
+        })
+        const response = await ai.models.embedContent({
+          model,
+          contents: texto,
+          config: {
+            outputDimensionality: 768,
+          },
+        })
 
-      const values = response?.embeddings?.[0]?.values || response?.embedding?.values
-      if (values && Array.isArray(values) && values.length === 768) {
-        return values
+        const values = response?.embeddings?.[0]?.values || response?.embedding?.values
+        if (values && Array.isArray(values) && values.length === 768) {
+          return values
+        }
+      } catch (err) {
+        logger.warn(`Modelo de embedding ${model} no disponible (${err.message}). Probando alternativo...`)
       }
-    } catch (err) {
-      logger.warn(`Modelo de embedding ${model} no disponible (${err.message}). Probando alternativo...`)
     }
+    return null
+  })()
+
+  // Guardrail estricto de 3.5 segundos para no demorar la consulta del usuario
+  const timeoutGuard = new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 3500)
+    if (timer?.unref) timer.unref()
+  })
+
+  try {
+    const vector = await Promise.race([tareaGeneracionEmbedding, timeoutGuard])
+    if (vector && Array.isArray(vector) && vector.length === 768) {
+      return vector
+    }
+  } catch (errorRace) {
+    logger.warn('Error en carrera de embedding Gemini:', errorRace.message)
   }
 
-  logger.warn('No se pudo generar embedding de 768 dimensiones con Gemini API, recurriendo a vector determinista')
+  logger.warn('Embedding de Gemini no obtenido en tiempo límite (< 3.5s). Conmutando a vector determinista.')
   return generarVectorSimulado(texto)
 }
 

@@ -65,8 +65,14 @@ async function generarAnalisisIA(metricas) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        timeout: 6000,
+        retryOptions: { attempts: 1 },
+      },
+    })
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
 
     const prompt = `Actúa como especialista senior en Convivencia Escolar y analítica directiva en Chile.
 Genera una explicación directiva, pedagógica, formal y rigurosa para cada uno de los gráficos del reporte mensual institucional de la Escuela Coeducacional N° 1 El Salvador, conforme a la Circular N° 482 y el RICE.
@@ -83,7 +89,7 @@ MÉTRICAS CUANTITATIVAS CONSOLIDADAS DEL MES:
 
 Responde estrictamente con el esquema JSON solicitado.`
 
-    const response = await ai.models.generateContent({
+    const tareaAnalisis = ai.models.generateContent({
       model: modelName,
       contents: prompt,
       config: {
@@ -93,12 +99,19 @@ Responde estrictamente con el esquema JSON solicitado.`
       },
     })
 
+    const timeoutGuard = new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timeout de 7s en reporte IA excedido')), 7000)
+      if (timer?.unref) timer.unref()
+    })
+
+    const response = await Promise.race([tareaAnalisis, timeoutGuard])
+
     const textoRespuesta = response.text?.trim()
     if (!textoRespuesta) throw new Error('Respuesta vacía de Gemini API')
 
     return JSON.parse(textoRespuesta)
   } catch (error) {
-    logger.error('Error al generar análisis con Gemini API, utilizando fallback:', { error: error.message })
+    logger.warn('Error o timeout al generar análisis con Gemini API, utilizando fallback institucional:', { error: error.message })
     return generarAnalisisFallback(metricas)
   }
 }

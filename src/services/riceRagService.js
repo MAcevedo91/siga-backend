@@ -210,7 +210,7 @@ const consultarRice = async ({
 
   // 4. Inferencia con Google Gemini Flash
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
   let respuestaFinal = ''
   let modoEjecucion = 'ia_gemini'
   let motivoFallback = null
@@ -226,7 +226,13 @@ const consultarRice = async ({
     respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
   } else {
     try {
-      const ai = new GoogleGenAI({ apiKey })
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          timeout: 4500, // Timeout estricto de 4.5 segundos por intento
+          retryOptions: { attempts: 1 }, // 1 intento, sin reintentos lentos que causen minutos de espera
+        },
+      })
 
       const contextoXml = chunksRecuperados.length > 0
         ? chunksRecuperados
@@ -252,37 +258,56 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
 
       const candidateModels = [
         modelName,
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash-lite',
         'gemini-3.8-flash',
-        'gemini-3-flash-preview',
-        'gemini-4-argon',
       ].filter((m, i, arr) => m && arr.indexOf(m) === i)
-      let errorGeneracion = null
 
-      for (const m of candidateModels) {
-        try {
-          const resp = await ai.models.generateContent({
-            model: m,
-            contents: userPrompt,
-            config: {
-              systemInstruction: SYSTEM_INSTRUCTION_RAG,
-              temperature: 0.1, // apego factual estricto
-            },
-          })
-          if (resp?.text) {
-            respuestaFinal = resp.text
-            errorGeneracion = null
-            break
+      const tareaInferencia = (async () => {
+        let errUltimo = null
+        for (const m of candidateModels) {
+          try {
+            const resp = await ai.models.generateContent({
+              model: m,
+              contents: userPrompt,
+              config: {
+                systemInstruction: SYSTEM_INSTRUCTION_RAG,
+                temperature: 0.1, // apego factual estricto
+              },
+            })
+            if (resp?.text) {
+              return { texto: resp.text, error: null }
+            }
+          } catch (mErr) {
+            errUltimo = mErr
+            logger.warn(`Modelo ${m} no respondió inmediatamente (${mErr.message}). Probando alternativo...`)
           }
-        } catch (mErr) {
-          errorGeneracion = mErr
-          logger.warn(`Modelo ${m} falló en consulta RICE (${mErr.message}). Probando alternativo...`)
         }
-      }
+        return { texto: null, error: errUltimo }
+      })()
 
-      if (!respuestaFinal) {
+      // Guardrail de 5.5 segundos para garantizar que el usuario nunca espere más de ese tiempo
+      const guardrailTimeout = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ timeout: true }), 5500)
+        if (timer?.unref) timer.unref()
+      })
+
+      const resultadoInferencia = await Promise.race([tareaInferencia, guardrailTimeout])
+
+      if (resultadoInferencia?.timeout) {
         modoEjecucion = 'fallback'
-        motivoFallback = errorGeneracion ? `Error de generación LLM: ${errorGeneracion.message}` : 'Modelos Gemini no respondieron'
-        logger.error('No se pudo generar respuesta con Gemini Flash, recurriendo a fallback', errorGeneracion)
+        motivoFallback = 'Tiempo de respuesta LLM excedió guardrail de seguridad (5.5s)'
+        logger.warn('[RAG] LLM demoró más de 5.5s. Conmutando a respuesta determinista estructurada inmediata.')
+        respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
+      } else if (resultadoInferencia?.texto) {
+        respuestaFinal = resultadoInferencia.texto
+      } else {
+        modoEjecucion = 'fallback'
+        motivoFallback = resultadoInferencia?.error
+          ? `Modelos Gemini no disponibles: ${resultadoInferencia.error.message}`
+          : 'Modelos Gemini no respondieron'
+        logger.warn('[RAG] Fallo en modelos Gemini. Activando fallback determinista estructurado.')
         respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
       }
     } catch (llmErr) {
@@ -413,7 +438,13 @@ const generarOrientacionClimaAulaRICE = async ({
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        timeout: 4000,
+        retryOptions: { attempts: 1 },
+      },
+    })
     const contextoXml = chunksRecuperados.length > 0
       ? chunksRecuperados.map((c, i) => `<fragmento id="${i + 1}" articulo="${c.articulo || ''}" seccion="${c.seccion || ''}">\n${c.contenido}\n</fragmento>`).join('\n')
       : `<fragmento id="1" articulo="Circular N° 482 Supereduc y Principios RICE" seccion="Gestión Formativa y Restaurativa">
@@ -434,31 +465,37 @@ Entrega la orientación formativa y pedagógica pertinente para el Encargado de 
 
     const candidateModels = [
       process.env.GEMINI_MODEL,
-      'gemini-3.8-flash',
-      'gemini-3-flash-preview',
-      'gemini-4-argon',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash-lite',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
-    let textoRespuesta = ''
-
-    for (const m of candidateModels) {
-      try {
-        const resp = await ai.models.generateContent({
-          model: m,
-          contents: promptUsuario,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION_CLIMA_AULA,
-            temperature: 0.2,
-          },
-        })
-        if (resp?.text) {
-          textoRespuesta = resp.text
-          break
+    const tareaOrientacion = (async () => {
+      for (const m of candidateModels) {
+        try {
+          const resp = await ai.models.generateContent({
+            model: m,
+            contents: promptUsuario,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION_CLIMA_AULA,
+              temperature: 0.2,
+            },
+          })
+          if (resp?.text) {
+            return resp.text
+          }
+        } catch (err) {
+          logger.warn(`Modelo ${m} falló en orientacion clima aula (${err.message}). Probando siguiente...`)
         }
-      } catch (err) {
-        logger.warn(`Modelo ${m} falló en orientacion clima aula (${err.message}). Probando siguiente...`)
       }
-    }
+      return null
+    })()
+
+    const timeoutGuard = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 4500)
+      if (timer?.unref) timer.unref()
+    })
+    const textoRespuesta = await Promise.race([tareaOrientacion, timeoutGuard])
 
     if (!textoRespuesta) {
       return fallbackDeterministic()
