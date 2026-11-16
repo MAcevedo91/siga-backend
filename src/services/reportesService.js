@@ -117,7 +117,10 @@ const obtenerReportesPorIncidente = async (tenantId, incidenteId) => {
       contenido_borrador, contenido_editado, contenido_aprobado,
       creado_por, aprobado_por, fecha_aprobacion,
       email_apoderado_enviado, fecha_envio_email, created_at, updated_at,
-      estudiantes:estudiante_id ( id, rut, nombre, apellido, es_pie ),
+      estudiantes:estudiante_id (
+        id, rut, nombre, apellido, es_pie,
+        cursos ( id, nombre )
+      ),
       creador:creado_por ( id, nombre, apellido, rol ),
       aprobador:aprobado_por ( id, nombre, apellido, rol )
     `)
@@ -130,7 +133,15 @@ const obtenerReportesPorIncidente = async (tenantId, incidenteId) => {
     throw new Error('Error al consultar reportes')
   }
 
-  return data || []
+  return (data || []).map(rep => ({
+    ...rep,
+    estudiantes: rep.estudiantes ? {
+      ...rep.estudiantes,
+      curso: rep.estudiantes.cursos?.nombre || null,
+      curso_id: rep.estudiantes.cursos?.id || null,
+      cursos: rep.estudiantes.cursos || null,
+    } : null,
+  }))
 }
 
 /**
@@ -144,7 +155,10 @@ const obtenerReportePorId = async (tenantId, reporteId) => {
       contenido_borrador, contenido_editado, contenido_aprobado,
       creado_por, aprobado_por, fecha_aprobacion,
       email_apoderado_enviado, fecha_envio_email, created_at, updated_at,
-      estudiantes:estudiante_id ( id, rut, nombre, apellido, es_pie, direccion ),
+      estudiantes:estudiante_id (
+        id, rut, nombre, apellido, es_pie, direccion,
+        cursos ( id, nombre )
+      ),
       incidentes:incidente_id ( id, fecha, gravedad, relato, medidas ),
       creador:creado_por ( id, nombre, apellido, rol ),
       aprobador:aprobado_por ( id, nombre, apellido, rol )
@@ -164,7 +178,15 @@ const obtenerReportePorId = async (tenantId, reporteId) => {
     throw err
   }
 
-  return data
+  return {
+    ...data,
+    estudiantes: data.estudiantes ? {
+      ...data.estudiantes,
+      curso: data.estudiantes.cursos?.nombre || null,
+      curso_id: data.estudiantes.cursos?.id || null,
+      cursos: data.estudiantes.cursos || null,
+    } : null,
+  }
 }
 
 /**
@@ -441,7 +463,10 @@ const generarBorradoresParaIncidente = async ({
       .from('incidente_estudiantes')
       .select(`
         es_victima, observacion,
-        estudiantes ( id, rut, nombre, apellido, es_pie )
+        estudiantes (
+          id, rut, nombre, apellido, es_pie,
+          cursos ( id, nombre )
+        )
       `)
       .eq('incidente_id', incidenteId)
 
@@ -452,6 +477,9 @@ const generarBorradoresParaIncidente = async ({
 
     const flatEstudiantes = (involucrados || []).map(e => ({
       ...e.estudiantes,
+      curso: e.estudiantes?.cursos?.nombre || null,
+      curso_id: e.estudiantes?.cursos?.id || null,
+      cursos: e.estudiantes?.cursos || null,
       es_victima: e.es_victima,
       observacion: e.observacion,
     }))

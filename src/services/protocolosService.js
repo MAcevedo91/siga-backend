@@ -44,7 +44,10 @@ const listarProtocolos = async (tenantId, filtros = {}) => {
     .select(`
       id, estado, fecha_apertura, fecha_cierre, observaciones, fecha_creacion,
       tipos_protocolo ( id, nombre ),
-      estudiantes ( id, rut, nombre, apellido ),
+      estudiantes (
+        id, rut, nombre, apellido,
+        cursos ( id, nombre )
+      ),
       usuarios ( id, nombre, apellido )
     `)
     .eq('tenant_id', tenantId)
@@ -60,7 +63,12 @@ const listarProtocolos = async (tenantId, filtros = {}) => {
   return data.map(prot => ({
     ...prot,
     tipo_protocolo: prot.tipos_protocolo?.nombre,
-    estudiante: prot.estudiantes,
+    estudiante: prot.estudiantes ? {
+      ...prot.estudiantes,
+      curso: prot.estudiantes.cursos?.nombre || null,
+      curso_id: prot.estudiantes.cursos?.id || null,
+      cursos: prot.estudiantes.cursos || null,
+    } : null,
   }))
 }
 
@@ -73,7 +81,10 @@ const obtenerProtocolo = async (id, tenantId) => {
     .select(`
       id, estado, fecha_apertura, fecha_cierre, observaciones, fecha_creacion,
       tipos_protocolo ( id, nombre ),
-      estudiantes ( id, rut, nombre, apellido ),
+      estudiantes (
+        id, rut, nombre, apellido,
+        cursos ( id, nombre )
+      ),
       usuarios ( id, nombre, apellido )
     `)
     .eq('id', id)
@@ -83,7 +94,12 @@ const obtenerProtocolo = async (id, tenantId) => {
   const mapProtocolo = (prot) => ({
     ...prot,
     tipo_protocolo: prot.tipos_protocolo?.nombre,
-    estudiante: prot.estudiantes,
+    estudiante: prot.estudiantes ? {
+      ...prot.estudiantes,
+      curso: prot.estudiantes.cursos?.nombre || null,
+      curso_id: prot.estudiantes.cursos?.id || null,
+      cursos: prot.estudiantes.cursos || null,
+    } : null,
   })
 
   if (error || !data) {

@@ -44,7 +44,7 @@ const TRANSICIONES = {
  * Lista incidentes con filtros opcionales.
  */
 const listarIncidentes = async (tenantId, filtros = {}) => {
-  const { estado, gravedad, fecha_desde, fecha_hasta, estudiante_id } = filtros
+  const { estado, gravedad, fecha_desde, fecha_hasta, estudiante_id, curso_id } = filtros
 
   let query = supabase
     .from('incidentes')
@@ -52,7 +52,15 @@ const listarIncidentes = async (tenantId, filtros = {}) => {
       id, fecha, gravedad, estado, relato, medidas, fecha_creacion,
       tipos_abordaje ( nombre ),
       usuarios ( nombre, apellido ),
-      incidente_estudiantes ( estudiante_id )
+      incidente_estudiantes (
+        estudiante_id,
+        es_victima,
+        observacion,
+        estudiantes (
+          id, rut, nombre, apellido,
+          cursos ( id, nombre )
+        )
+      )
     `)
     .eq('tenant_id', tenantId)
     .order('fecha_creacion', { ascending: false })
@@ -74,14 +82,51 @@ const listarIncidentes = async (tenantId, filtros = {}) => {
     query = query.in('id', ids)
   }
 
+  // Filtro por curso de estudiantes involucrados
+  if (curso_id) {
+    const { data: estCurso } = await supabase
+      .from('estudiantes')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('curso_id', curso_id)
+
+    const estIds = (estCurso || []).map(e => e.id)
+    if (estIds.length === 0) return []
+
+    const { data: incIds } = await supabase
+      .from('incidente_estudiantes')
+      .select('incidente_id')
+      .in('estudiante_id', estIds)
+
+    const ids = (incIds || []).map(r => r.incidente_id)
+    if (ids.length === 0) return []
+    query = query.in('id', ids)
+  }
+
   const { data, error } = await query
   if (error) throw error
 
-  return data.map(inc => ({
-    ...inc,
-    tipo_abordaje: inc.tipos_abordaje?.nombre,
-    estudiantes_count: inc.incidente_estudiantes?.length || 0,
-  }))
+  return data.map(inc => {
+    const estudiantes = (inc.incidente_estudiantes || []).map(ie => ({
+      id: ie.estudiantes?.id || ie.estudiante_id,
+      nombre: ie.estudiantes?.nombre || '',
+      apellido: ie.estudiantes?.apellido || '',
+      rut: ie.estudiantes?.rut || '',
+      curso: ie.estudiantes?.cursos?.nombre || '',
+      curso_id: ie.estudiantes?.cursos?.id || null,
+      es_victima: ie.es_victima,
+      observacion: ie.observacion,
+    }))
+
+    return {
+      ...inc,
+      tipo_abordaje: inc.tipos_abordaje?.nombre,
+      estudiantes_count: estudiantes.length,
+      estudiantes,
+      // Retrocompatibilidad con código existente que leía `estudiante`
+      estudiante: estudiantes[0] || null,
+    }
+  })
 }
 
 /**
@@ -110,12 +155,18 @@ const obtenerIncidente = async (id, tenantId) => {
     .from('incidente_estudiantes')
     .select(`
       es_victima, observacion,
-      estudiantes ( id, rut, nombre, apellido )
+      estudiantes (
+        id, rut, nombre, apellido,
+        cursos ( id, nombre )
+      )
     `)
     .eq('incidente_id', id)
 
   const flatEstudiantes = (estudiantes || []).map(e => ({
     ...e.estudiantes,
+    curso: e.estudiantes?.cursos?.nombre || null,
+    curso_id: e.estudiantes?.cursos?.id || null,
+    cursos: e.estudiantes?.cursos || null,
     es_victima: e.es_victima,
     observacion: e.observacion,
   }))
