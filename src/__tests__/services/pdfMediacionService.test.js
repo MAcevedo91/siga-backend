@@ -117,6 +117,10 @@ describe('TASK 7.2.3.1 — Motor PDFKit de Acta Oficial de Mediación Escolar', 
       const pdfMagicBytes = buffer.toString('ascii', 0, 5)
       expect(pdfMagicBytes).toBe('%PDF-')
 
+      // Verificar que el documento no genere páginas en blanco residuales
+      const pageCount = (buffer.toString('binary').match(/\/Type\s*\/Page\b/g) || []).length
+      expect(pageCount).toBe(1)
+
       // Verificar que el PDF contenga los metadatos estructurados en UTF-16BE
       expect(buffer.includes(Buffer.from('MED-2026-0001', 'utf16le').swap16())).toBe(true)
       expect(buffer.includes(Buffer.from('9876-5', 'utf16le').swap16())).toBe(true)

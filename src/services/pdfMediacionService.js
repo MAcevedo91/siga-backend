@@ -433,6 +433,8 @@ const generarActaMediacionPDF = (mediacion) => {
       const range = doc.bufferedPageRange()
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i)
+        const oldBottomMargin = doc.page.margins.bottom
+        doc.page.margins.bottom = 0
 
         // Línea divisoria inferior
         doc
@@ -450,7 +452,7 @@ const generarActaMediacionPDF = (mediacion) => {
             'CONFIDENCIAL · Contiene datos sensibles de estudiantes y acuerdos formativos protegidos por Ley N° 19.628 y Circular N° 482.',
             50,
             doc.page.height - 35,
-            { width: pageWidth, align: 'center' }
+            { width: pageWidth, align: 'center', lineBreak: false }
           )
 
         doc
@@ -460,8 +462,10 @@ const generarActaMediacionPDF = (mediacion) => {
             `ESCUELA COEDUCACIONAL N° 1 EL SALVADOR | FOLIO: ${mediacion.folio || 'S-F'} | PÁGINA ${i + 1} DE ${range.count} | Hash: ${hashInmutable}`,
             50,
             doc.page.height - 25,
-            { width: pageWidth, align: 'center' }
+            { width: pageWidth, align: 'center', lineBreak: false }
           )
+
+        doc.page.margins.bottom = oldBottomMargin
       }
 
       doc.end()

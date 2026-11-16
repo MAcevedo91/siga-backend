@@ -637,6 +637,9 @@ async function compilarReporteMensualPDF(tenantId, usuario = {}, graficos = {}) 
     })
 
     // PIE DE PÁGINA FINAL
+    const oldBottomMargin = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
+
     doc.y = doc.page.height - 48
     doc.rect(40, doc.y, pageWidth, 0.8).fill(GRIS_BORDE)
     doc.moveDown(0.3)
@@ -644,12 +647,14 @@ async function compilarReporteMensualPDF(tenantId, usuario = {}, graficos = {}) 
       .fontSize(6.5)
       .font('Helvetica-Bold')
       .fillColor(GRIS_TEXTO)
-      .text('CONFIDENCIAL · Contiene información sensible de estudiantes y convivencia escolar protegida por la Ley N° 19.628.', { align: 'center' })
+      .text('CONFIDENCIAL · Contiene información sensible de estudiantes y convivencia escolar protegida por la Ley N° 19.628.', { align: 'center', lineBreak: false })
     doc.moveDown(0.15)
     doc
       .fontSize(6.5)
       .font('Helvetica')
-      .text('Documento oficial generado con SIGA Escolar · Escuela Coeducacional N° 1 El Salvador · Certificación RICE', { align: 'center' })
+      .text('Documento oficial generado con SIGA Escolar · Escuela Coeducacional N° 1 El Salvador · Certificación RICE', { align: 'center', lineBreak: false })
+
+    doc.page.margins.bottom = oldBottomMargin
 
     doc.end()
   })

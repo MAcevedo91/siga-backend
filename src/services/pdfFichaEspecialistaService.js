@@ -353,6 +353,8 @@ const generarFichaSaludPDF = (expediente) => {
       const totalPaginas = doc.bufferedPageRange().count
       for (let i = 0; i < totalPaginas; i++) {
         doc.switchToPage(i)
+        const oldBottomMargin = doc.page.margins.bottom
+        doc.page.margins.bottom = 0
 
         const yLinea = 805
         const yTexto1 = 812
@@ -386,6 +388,8 @@ const generarFichaSaludPDF = (expediente) => {
             yTexto2,
             { width: pageWidth, height: 10, align: 'center', lineBreak: false }
           )
+
+        doc.page.margins.bottom = oldBottomMargin
       }
 
       doc.end()

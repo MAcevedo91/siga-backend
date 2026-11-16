@@ -66,6 +66,10 @@ describe('pdfService — generarInformeOficialIncidentePDF (Tarea 6.3.1)', () =>
     // Todo archivo PDF válido inicia con los bytes ASCII "%PDF-"
     const pdfMagicBytes = buffer.toString('ascii', 0, 5)
     expect(pdfMagicBytes).toBe('%PDF-')
+
+    // Documento de una plana sin hojas en blanco residuales
+    const pageCount = (buffer.toString('binary').match(/\/Type\s*\/Page\b/g) || []).length
+    expect(pageCount).toBe(1)
   })
 
   it('debe generar exitosamente el PDF aun cuando faltan datos opcionales (tenant por defecto y sin apoderado)', async () => {
@@ -135,6 +139,10 @@ describe('pdfService — generarInformeOficialIncidentePDF (Tarea 6.3.1)', () =>
     expect(Buffer.isBuffer(buffer)).toBe(true)
     expect(buffer.length).toBeGreaterThan(1000)
     expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
+
+    // Verificación de que no existen páginas en blanco adicionales
+    const pageCount = (buffer.toString('binary').match(/\/Type\s*\/Page\b/g) || []).length
+    expect(pageCount).toBe(1)
   })
 
   it('debe generar exitosamente el PDF de historial conductual con firma única de Encargado de Convivencia', async () => {
@@ -152,5 +160,8 @@ describe('pdfService — generarInformeOficialIncidentePDF (Tarea 6.3.1)', () =>
     expect(Buffer.isBuffer(buffer)).toBe(true)
     expect(buffer.length).toBeGreaterThan(1000)
     expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-')
+
+    const pageCount = (buffer.toString('binary').match(/\/Type\s*\/Page\b/g) || []).length
+    expect(pageCount).toBe(1)
   })
 })

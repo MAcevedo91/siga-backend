@@ -259,6 +259,9 @@ const generarHistorialPDF = (estudiante, incidentes) => {
     // ==========================================================
     // PIE DE PÁGINA Y CONFIDENCIALIDAD
     // ==========================================================
+    const oldBottomMarginHistorial = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
+
     doc.moveDown(1.5)
     doc
       .fillColor(GRIS)
@@ -268,7 +271,7 @@ const generarHistorialPDF = (estudiante, incidentes) => {
         'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
         50,
         doc.y,
-        { width: pageWidth, align: 'center' }
+        { width: pageWidth, align: 'center', lineBreak: false }
       )
     doc.moveDown(0.2)
     doc
@@ -278,8 +281,10 @@ const generarHistorialPDF = (estudiante, incidentes) => {
         `Documento generado por SIGA Escolar • ${new Date().toLocaleString('es-CL')} • Escuela Coeducacional N° 1 El Salvador`,
         50,
         doc.y,
-        { width: pageWidth, align: 'center' }
+        { width: pageWidth, align: 'center', lineBreak: false }
       )
+
+    doc.page.margins.bottom = oldBottomMarginHistorial
 
     doc.end()
   })
@@ -349,6 +354,9 @@ async function generarPerfilEstudiante(estudiante, incidentes, riesgo) {
       }
 
       // Footer
+      const oldBottomMarginPerfil = doc.page.margins.bottom
+      doc.page.margins.bottom = 0
+
       doc
         .fontSize(6.5)
         .font('Helvetica-Bold')
@@ -357,15 +365,17 @@ async function generarPerfilEstudiante(estudiante, incidentes, riesgo) {
           'CONFIDENCIAL · Contiene datos personales y sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación.',
           50,
           doc.page.height - 45,
-          { width: doc.page.width - 100, align: 'center' }
+          { width: doc.page.width - 100, align: 'center', lineBreak: false }
         )
         .font('Helvetica')
         .text(
           'Escuela Coeducacional N° 1 El Salvador • Ficha institucional de uso exclusivo del personal autorizado',
           50,
           doc.page.height - 35,
-          { width: doc.page.width - 100, align: 'center' }
+          { width: doc.page.width - 100, align: 'center', lineBreak: false }
         )
+
+      doc.page.margins.bottom = oldBottomMarginPerfil
 
       doc.end()
     } catch (error) {
@@ -745,6 +755,9 @@ const generarInformeOficialIncidentePDF = ({
       const range = doc.bufferedPageRange()
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i)
+        const oldBottomMargin = doc.page.margins.bottom
+        doc.page.margins.bottom = 0
+
         doc
           .fillColor(preview ? '#b45309' : GRIS_SUAVE)
           .fontSize(6.5)
@@ -753,7 +766,7 @@ const generarInformeOficialIncidentePDF = ({
             'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
             50,
             doc.page.height - 38,
-            { align: 'center', width: pageWidth }
+            { align: 'center', width: pageWidth, lineBreak: false }
           )
         doc
           .fontSize(6.5)
@@ -764,8 +777,10 @@ const generarInformeOficialIncidentePDF = ({
               : `Documento oficial e intransferible. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
             50,
             doc.page.height - 28,
-            { align: 'center', width: pageWidth }
+            { align: 'center', width: pageWidth, lineBreak: false }
           )
+
+        doc.page.margins.bottom = oldBottomMargin
       }
 
       doc.end()
@@ -1054,6 +1069,9 @@ const generarExpedienteProtocoloPDF = (protocolo, pasos = []) => {
       const range = doc.bufferedPageRange()
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i)
+        const oldBottomMargin = doc.page.margins.bottom
+        doc.page.margins.bottom = 0
+
         doc
           .fillColor(GRIS_SUAVE)
           .fontSize(6.5)
@@ -1062,7 +1080,7 @@ const generarExpedienteProtocoloPDF = (protocolo, pasos = []) => {
             'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
             50,
             doc.page.height - 35,
-            { align: 'center', width: pageWidth }
+            { align: 'center', width: pageWidth, lineBreak: false }
           )
         doc
           .fontSize(6.5)
@@ -1071,8 +1089,10 @@ const generarExpedienteProtocoloPDF = (protocolo, pasos = []) => {
             `Expediente Oficial de Convivencia Escolar — Escuela Coeducacional N°1 El Salvador | Página ${i + 1} de ${range.count}`,
             50,
             doc.page.height - 25,
-            { align: 'center', width: pageWidth }
+            { align: 'center', width: pageWidth, lineBreak: false }
           )
+
+        doc.page.margins.bottom = oldBottomMargin
       }
 
       doc.end()
