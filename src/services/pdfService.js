@@ -257,16 +257,28 @@ const generarHistorialPDF = (estudiante, incidentes) => {
       .text('Firma y Timbre Institucional', xFirma, doc.y, { width: anchoFirma, align: 'center' })
 
     // ==========================================================
-    // PIE DE PÁGINA
+    // PIE DE PÁGINA Y CONFIDENCIALIDAD
     // ==========================================================
-    doc.moveDown(2)
+    doc.moveDown(1.5)
     doc
       .fillColor(GRIS)
-      .fontSize(7)
+      .fontSize(6.5)
+      .font('Helvetica-Bold')
+      .text(
+        'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
+        50,
+        doc.y,
+        { width: pageWidth, align: 'center' }
+      )
+    doc.moveDown(0.2)
+    doc
+      .fontSize(6.5)
       .font('Helvetica')
       .text(
-        `Documento generado por SIGA Escolar • ${new Date().toLocaleString('es-CL')} • Uso exclusivo interno`,
-        { align: 'center' }
+        `Documento generado por SIGA Escolar • ${new Date().toLocaleString('es-CL')} • Escuela Coeducacional N° 1 El Salvador`,
+        50,
+        doc.y,
+        { width: pageWidth, align: 'center' }
       )
 
     doc.end()
@@ -337,10 +349,23 @@ async function generarPerfilEstudiante(estudiante, incidentes, riesgo) {
       }
 
       // Footer
-      doc.fontSize(8)
-        .text('Este documento es confidencial y de uso exclusivo del personal autorizado.', 50, doc.page.height - 50, {
-          align: 'center'
-        })
+      doc
+        .fontSize(6.5)
+        .font('Helvetica-Bold')
+        .fillColor('#64748b')
+        .text(
+          'CONFIDENCIAL · Contiene datos personales y sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación.',
+          50,
+          doc.page.height - 45,
+          { width: doc.page.width - 100, align: 'center' }
+        )
+        .font('Helvetica')
+        .text(
+          'Escuela Coeducacional N° 1 El Salvador • Ficha institucional de uso exclusivo del personal autorizado',
+          50,
+          doc.page.height - 35,
+          { width: doc.page.width - 100, align: 'center' }
+        )
 
       doc.end()
     } catch (error) {
@@ -546,7 +571,10 @@ const generarInformeOficialIncidentePDF = ({
         .fillColor(AZUL_OSCURO)
         .fontSize(10)
         .font('Helvetica-Bold')
-        .text('1. ANTECEDENTES GENERALES Y FILIACIÓN')
+        .text('1. ANTECEDENTES GENERALES Y FILIACIÓN', 50, doc.y, {
+          width: pageWidth,
+          align: 'left',
+        })
 
       doc
         .moveDown(0.2)
@@ -590,6 +618,7 @@ const generarInformeOficialIncidentePDF = ({
       doc.font('Helvetica-Bold').text('Gravedad:', 330, yFicha + 45)
       doc.font('Helvetica').text(incidente.gravedad || 'Leve', 410, yFicha + 45)
 
+      doc.x = 50
       doc.y = yFicha + 65
 
       // =======================================================================
@@ -605,7 +634,10 @@ const generarInformeOficialIncidentePDF = ({
           .fillColor(AZUL_OSCURO)
           .fontSize(9.5)
           .font('Helvetica-Bold')
-          .text(`${numRomano}. ${titulo}`)
+          .text(`${numRomano}. ${titulo}`, 50, doc.y, {
+            width: pageWidth,
+            align: 'left',
+          })
 
         doc
           .moveDown(0.2)
@@ -627,6 +659,7 @@ const generarInformeOficialIncidentePDF = ({
             lineGap: 2.5,
           })
 
+        doc.x = 50
         doc.moveDown(0.9)
       }
 
@@ -657,36 +690,56 @@ const generarInformeOficialIncidentePDF = ({
         .lineTo(xFirma + anchoFirma, yFirmas)
         .stroke()
 
-      const firmanteNombre = preview
-        ? 'DOCUMENTO EN REVISIÓN (PENDIENTE DE APROBACIÓN)'
-        : (reporte.aprobador
-            ? `${reporte.aprobador.nombre} ${reporte.aprobador.apellido}`
-            : 'ENCARGADO(A) DE CONVIVENCIA ESCOLAR')
+      if (preview) {
+        doc
+          .fillColor('#92400e')
+          .fontSize(8.5)
+          .font('Helvetica-Bold')
+          .text('DOCUMENTO EN REVISIÓN', xFirma, yFirmas + 5, {
+            width: anchoFirma,
+            align: 'center',
+          })
+          .fontSize(7.5)
+          .font('Helvetica-Bold')
+          .fillColor('#b45309')
+          .text('(PENDIENTE DE APROBACIÓN FORMAL)', xFirma, yFirmas + 17, {
+            width: anchoFirma,
+            align: 'center',
+          })
+          .fontSize(7)
+          .font('Helvetica')
+          .fillColor(GRIS_SUAVE)
+          .text(tenant.nombre || 'Escuela Coeducacional N° 1 El Salvador', xFirma, yFirmas + 28, {
+            width: anchoFirma,
+            align: 'center',
+          })
+      } else {
+        const firmanteNombre = reporte.aprobador
+          ? `${reporte.aprobador.nombre} ${reporte.aprobador.apellido}`
+          : 'ENCARGADO(A) DE CONVIVENCIA ESCOLAR'
 
-      doc
-        .fillColor(preview ? '#b45309' : GRIS_TEXTO)
-        .fontSize(8.5)
-        .font('Helvetica-Bold')
-        .text(firmanteNombre.toUpperCase(), xFirma, yFirmas + 5, {
-          width: anchoFirma,
-          align: 'center',
-        })
-
-      doc
-        .fontSize(8)
-        .font('Helvetica-Bold')
-        .text(preview ? 'VALIDACIÓN PREVIA - CONVIVENCIA ESCOLAR' : 'ENCARGADO(A) DE CONVIVENCIA ESCOLAR', xFirma, yFirmas + 17, {
-          width: anchoFirma,
-          align: 'center',
-        })
-
-      doc
-        .fontSize(7.5)
-        .font('Helvetica')
-        .text(tenant.nombre || 'Escuela Coeducacional N° 1 El Salvador', xFirma, yFirmas + 29, {
-          width: anchoFirma,
-          align: 'center',
-        })
+        doc
+          .fillColor(GRIS_TEXTO)
+          .fontSize(8.5)
+          .font('Helvetica-Bold')
+          .text(firmanteNombre.toUpperCase(), xFirma, yFirmas + 5, {
+            width: anchoFirma,
+            align: 'center',
+          })
+          .fontSize(8)
+          .font('Helvetica-Bold')
+          .text('ENCARGADO(A) DE CONVIVENCIA ESCOLAR', xFirma, yFirmas + 17, {
+            width: anchoFirma,
+            align: 'center',
+          })
+          .fontSize(7.5)
+          .font('Helvetica')
+          .fillColor(GRIS_SUAVE)
+          .text(tenant.nombre || 'Escuela Coeducacional N° 1 El Salvador', xFirma, yFirmas + 29, {
+            width: anchoFirma,
+            align: 'center',
+          })
+      }
 
       // Glosa de pie de página institucional en todas las páginas
       const range = doc.bufferedPageRange()
@@ -694,14 +747,23 @@ const generarInformeOficialIncidentePDF = ({
         doc.switchToPage(i)
         doc
           .fillColor(preview ? '#b45309' : GRIS_SUAVE)
-          .fontSize(7)
+          .fontSize(6.5)
+          .font('Helvetica-Bold')
+          .text(
+            'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
+            50,
+            doc.page.height - 38,
+            { align: 'center', width: pageWidth }
+          )
+        doc
+          .fontSize(6.5)
           .font('Helvetica')
           .text(
             preview
               ? `VISTA PREVIA PARA REVISIÓN Y VALIDACIÓN INTERNA • Documento no oficial pendiente de aprobación formal • Página ${i + 1} de ${range.count}`
-              : `Documento oficial e intransferible. Protegido por la Ley N° 19.628 de Protección de Datos Personales. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
+              : `Documento oficial e intransferible. Aprobado formalmente el ${fechaAprobacion}. Página ${i + 1} de ${range.count}`,
             50,
-            doc.page.height - 35,
+            doc.page.height - 28,
             { align: 'center', width: pageWidth }
           )
       }
@@ -995,9 +1057,18 @@ const generarExpedienteProtocoloPDF = (protocolo, pasos = []) => {
         doc
           .fillColor(GRIS_SUAVE)
           .fontSize(6.5)
+          .font('Helvetica-Bold')
+          .text(
+            'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación no autorizada.',
+            50,
+            doc.page.height - 35,
+            { align: 'center', width: pageWidth }
+          )
+        doc
+          .fontSize(6.5)
           .font('Helvetica')
           .text(
-            `Expediente Oficial de Convivencia Escolar — Escuela Coeducacional N°1 El Salvador | Protegido por Ley N° 19.628 de Protección de Datos Personales | Página ${i + 1} de ${range.count}`,
+            `Expediente Oficial de Convivencia Escolar — Escuela Coeducacional N°1 El Salvador | Página ${i + 1} de ${range.count}`,
             50,
             doc.page.height - 25,
             { align: 'center', width: pageWidth }

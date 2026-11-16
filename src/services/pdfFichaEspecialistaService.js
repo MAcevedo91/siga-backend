@@ -371,7 +371,7 @@ const generarFichaSaludPDF = (expediente) => {
           .font('Helvetica-Bold')
           .fontSize(6)
           .text(
-            `ESCUELA COEDUCACIONAL N° 1 EL SALVADOR (RBD 9876-5) | FICHA MÉDICA CONFIDENCIAL | PÁGINA ${i + 1} DE ${totalPaginas}`,
+            `CONFIDENCIAL · Contiene datos médicos y personales de alumnos protegidos por Ley N° 19.628 y Ley N° 20.584 | PÁGINA ${i + 1} DE ${totalPaginas}`,
             45,
             yTexto1,
             { width: pageWidth, height: 10, align: 'center', lineBreak: false }
@@ -381,7 +381,7 @@ const generarFichaSaludPDF = (expediente) => {
           .font('Helvetica')
           .fontSize(5.5)
           .text(
-            `Hash SHA-256 de Certificación: ${hashInmutable} | Ley N° 19.628 y Ley N° 20.584`,
+            `Escuela Coeducacional N° 1 El Salvador (RBD 9876-5) | Hash SHA-256: ${hashInmutable} | Uso exclusivo de especialistas autorizados`,
             45,
             yTexto2,
             { width: pageWidth, height: 10, align: 'center', lineBreak: false }

@@ -447,7 +447,7 @@ const generarActaMediacionPDF = (mediacion) => {
           .font('Helvetica-Bold')
           .fontSize(6)
           .text(
-            `ESCUELA COEDUCACIONAL N° 1 EL SALVADOR (RBD 9876-5) | FOLIO OFICIAL: ${mediacion.folio || 'S-F'} | PÁGINA ${i + 1} DE ${range.count}`,
+            'CONFIDENCIAL · Contiene datos sensibles de estudiantes y acuerdos formativos protegidos por Ley N° 19.628 y Circular N° 482.',
             50,
             doc.page.height - 35,
             { width: pageWidth, align: 'center' }
@@ -457,7 +457,7 @@ const generarActaMediacionPDF = (mediacion) => {
           .font('Helvetica')
           .fontSize(5.5)
           .text(
-            `Hash SHA-256 de Autenticidad Inmutable: ${hashInmutable} | Conforme a Ley N° 19.628 de Protección de Datos Personales`,
+            `ESCUELA COEDUCACIONAL N° 1 EL SALVADOR | FOLIO: ${mediacion.folio || 'S-F'} | PÁGINA ${i + 1} DE ${range.count} | Hash: ${hashInmutable}`,
             50,
             doc.page.height - 25,
             { width: pageWidth, align: 'center' }

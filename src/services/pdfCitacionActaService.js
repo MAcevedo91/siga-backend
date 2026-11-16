@@ -347,11 +347,11 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
         doc.moveTo(45, 742).lineTo(567, 742).stroke(GRIS_BORDE)
 
         doc
-          .font('Helvetica')
-          .fontSize(6.5)
+          .font('Helvetica-Bold')
+          .fontSize(6)
           .fillColor(GRIS_TEXTO)
           .text(
-            'Documento oficial generado bajo el marco de la Circular N° 482 de la Superintendencia de Educación y RICE.',
+            'CONFIDENCIAL · Contiene datos sensibles de estudiantes protegidos por la Ley N° 19.628 y Circular N° 482. Prohibida su divulgación.',
             45,
             746,
             { align: 'center', width: 522, lineBreak: false }
@@ -359,13 +359,13 @@ const generarActaCitacionPDF = (citacion, acuerdos = {}) => {
 
         doc
           .font('Courier-Bold')
-          .fontSize(6.5)
+          .fontSize(6)
           .fillColor(AZUL_INSTITUCIONAL)
           .text(`Hash SHA-256 de Certificación: ${hashDocumento}`, 45, 755, { align: 'center', width: 522, lineBreak: false })
 
         doc
           .font('Helvetica')
-          .fontSize(6.5)
+          .fontSize(6)
           .fillColor(GRIS_TEXTO)
           .text(`Página ${i + 1} de ${range.count} · Folio: ${folioTexto}`, 45, 764, { align: 'center', width: 522, lineBreak: false })
 
