@@ -48,7 +48,8 @@ const listarProtocolos = async (tenantId, filtros = {}) => {
         id, rut, nombre, apellido,
         cursos ( id, nombre )
       ),
-      usuarios ( id, nombre, apellido )
+      usuarios ( id, nombre, apellido ),
+      protocolo_pasos ( id, completado )
     `)
     .eq('tenant_id', tenantId)
     .order('fecha_creacion', { ascending: false })
@@ -60,16 +61,27 @@ const listarProtocolos = async (tenantId, filtros = {}) => {
   const { data, error } = await query
   if (error) throw error
 
-  return data.map(prot => ({
-    ...prot,
-    tipo_protocolo: prot.tipos_protocolo?.nombre,
-    estudiante: prot.estudiantes ? {
-      ...prot.estudiantes,
-      curso: prot.estudiantes.cursos?.nombre || null,
-      curso_id: prot.estudiantes.cursos?.id || null,
-      cursos: prot.estudiantes.cursos || null,
-    } : null,
-  }))
+  return data.map(prot => {
+    const totalPasos = prot.protocolo_pasos?.length || 0
+    const pasosCompletados = prot.protocolo_pasos?.filter(p => p.completado)?.length || 0
+    const porcentajeAvance = totalPasos > 0
+      ? Math.round((pasosCompletados / totalPasos) * 100)
+      : (prot.estado === 'Cerrado' ? 100 : prot.estado === 'Derivado' ? 66 : 33)
+
+    return {
+      ...prot,
+      tipo_protocolo: prot.tipos_protocolo?.nombre,
+      estudiante: prot.estudiantes ? {
+        ...prot.estudiantes,
+        curso: prot.estudiantes.cursos?.nombre || null,
+        curso_id: prot.estudiantes.cursos?.id || null,
+        cursos: prot.estudiantes.cursos || null,
+      } : null,
+      total_pasos: totalPasos,
+      pasos_completados: pasosCompletados,
+      porcentaje_avance: porcentajeAvance,
+    }
+  })
 }
 
 /**
