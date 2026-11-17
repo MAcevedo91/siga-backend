@@ -57,7 +57,7 @@ const obtenerRiceActivoHandler = async (req, res, next) => {
  */
 const consultarRiceHandler = async (req, res, next) => {
   try {
-    const { consulta, contexto_incidente } = req.body
+    const { consulta, contexto_incidente, nombre_usuario, nombreUsuario } = req.body
 
     if (!consulta || typeof consulta !== 'string' || consulta.trim() === '') {
       return res.status(400).json({
@@ -67,11 +67,14 @@ const consultarRiceHandler = async (req, res, next) => {
       })
     }
 
+    const nombreFinal = nombre_usuario || nombreUsuario || null
+
     const resultado = await riceRagService.consultarRice({
       tenantId: req.user.tenant_id,
       usuarioId: req.user.id || req.user.user_id,
       consulta,
       contextoIncidente: contexto_incidente,
+      ...(nombreFinal ? { nombreUsuario: nombreFinal } : {}),
     })
 
     res.status(200).json({

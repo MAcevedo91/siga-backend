@@ -63,21 +63,23 @@ const limpiarContenidoFragmento = (texto = '') => {
  * Genera una respuesta estructurada de contingencia (fallback) basada en los chunks recuperados
  * cuando la API de Gemini no está disponible o no hay API Key configurada.
  */
-const generarRespuestaFallback = (pregunta, chunks = []) => {
+const generarRespuestaFallback = (pregunta, chunks = [], nombreUsuario = null) => {
   const chunksValidos = (chunks || []).filter((c) => !esChunkDeIndice(c))
   const chunksAProcesar = chunksValidos.length > 0 ? chunksValidos : chunks
 
+  const vocativo = nombreUsuario ? `Estimado/a ${nombreUsuario}` : 'Estimado/a funcionario/a'
+
   if (!chunksAProcesar || chunksAProcesar.length === 0) {
-    return 'Estimado/a funcionario/a: Tras consultar el contexto normativo disponible, le informo que **No se encontraron artículos o procedimientos específicos** en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta.\n\nLe recomendamos consultar directamente con el **Encargado/a de Convivencia Escolar o con la Dirección del establecimiento**, quienes cuentan con el documento íntegro.'
+    return `${vocativo}: Tras consultar el contexto normativo disponible, le informo que **No se encontraron artículos o procedimientos específicos** en el RICE del establecimiento ni en la Circular N° 482 de la Superintendencia de Educación vinculados a su consulta.\n\nLe recomendamos consultar directamente con el **Encargado/a de Convivencia Escolar o con la Dirección del establecimiento**, quienes cuentan con el documento íntegro.`
   }
 
   const tieneNormativaNacional = chunksAProcesar.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
   const tieneNormativaLocal = chunksAProcesar.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
 
-  let encabezado = 'Estimado/a funcionario/a:\n\nA continuación, se detalla el procedimiento y las directrices normativas identificadas en el **Reglamento Interno y de Convivencia Escolar (RICE)** de la Escuela Coeducacional N° 1 El Salvador para orientar su actuación:'
+  let encabezado = `${vocativo}:\n\nA continuación, se detalla el procedimiento y las directrices normativas identificadas en el **Reglamento Interno y de Convivencia Escolar (RICE)** de la Escuela Coeducacional N° 1 El Salvador para orientar su actuación:`
 
   if (tieneNormativaNacional && !tieneNormativaLocal) {
-    encabezado = 'Estimado/a funcionario/a:\n\nDado que en el RICE del establecimiento no se visualiza un protocolo específico para esta materia, **se aplica de forma supletoria y obligatoria la Circular N° 482 de la Superintendencia de Educación**, la cual fija los estándares mínimos de convivencia escolar a nivel nacional:'
+    encabezado = `${vocativo}:\n\nDado que en el RICE del establecimiento no se visualiza un protocolo específico para esta materia, **se aplica de forma supletoria y obligatoria la Circular N° 482 de la Superintendencia de Educación**, la cual fija los estándares mínimos de convivencia escolar a nivel nacional:`
   }
 
   const detalleArticulos = chunksAProcesar
@@ -115,6 +117,7 @@ const consultarRice = async ({
   usuarioId,
   consulta = '',
   contextoIncidente = null,
+  nombreUsuario = null,
 }) => {
   if (!tenantId) throw new Error('El tenant_id es requerido')
   if (!consulta || consulta.trim() === '') throw new Error('La consulta no puede estar vacía')
@@ -223,7 +226,7 @@ const consultarRice = async ({
     if (!apiKey || apiKey === 'your-gemini-api-key') {
       logger.warn('[RAG] GEMINI_API_KEY no detectada en process.env. Activando fallback determinista estructurado.')
     }
-    respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
+    respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados, nombreUsuario)
   } else {
     try {
       const ai = new GoogleGenAI({
@@ -249,7 +252,7 @@ const consultarRice = async ({
 <contexto_normativo_rice>
 ${contextoXml}
 </contexto_normativo_rice>
-
+${nombreUsuario ? `\nFUNCIONARIO CONSULTANTE:\n"${nombreUsuario}" (salúdalo amablemente por su nombre al inicio de tu respuesta).\n` : ''}
 CONSULTA DEL FUNCIONARIO:
 "${consultaLimpia}"
 
@@ -299,7 +302,7 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
         modoEjecucion = 'fallback'
         motivoFallback = 'Tiempo de respuesta LLM excedió guardrail de seguridad (5.5s)'
         logger.warn('[RAG] LLM demoró más de 5.5s. Conmutando a respuesta determinista estructurada inmediata.')
-        respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
+        respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados, nombreUsuario)
       } else if (resultadoInferencia?.texto) {
         respuestaFinal = resultadoInferencia.texto
       } else {
@@ -308,13 +311,13 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
           ? `Modelos Gemini no disponibles: ${resultadoInferencia.error.message}`
           : 'Modelos Gemini no respondieron'
         logger.warn('[RAG] Fallo en modelos Gemini. Activando fallback determinista estructurado.')
-        respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
+        respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados, nombreUsuario)
       }
     } catch (llmErr) {
       modoEjecucion = 'fallback'
       motivoFallback = `Error en cliente LLM: ${llmErr.message}`
       logger.error('Error en pipeline de inferencia LLM RAG:', llmErr)
-      respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados)
+      respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados, nombreUsuario)
     }
   }
 
