@@ -93,7 +93,14 @@ const generarPropuestaReporteIA = async (incidente, estudianteFocoId) => {
     sanitizarContextoIncidente(incidente, estudianteFocoId)
 
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3-flash-preview'
+  const deprecatedModels = new Set([
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+  ])
+  const envModel = process.env.GEMINI_MODEL?.trim()
+  const modelName = envModel && !deprecatedModels.has(envModel) ? envModel : 'gemini-3.8-flash'
 
   let reporteConTokens = null
 
@@ -105,7 +112,7 @@ const generarPropuestaReporteIA = async (incidente, estudianteFocoId) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: 6000,
+        timeout: 15000, // Mínimo permitido por Gemini 3.x API es 10s
         retryOptions: { attempts: 1 },
       },
     })
@@ -132,9 +139,8 @@ Instrucción: Genera el borrador del informe estructurado en formato JSON enfoca
 
     const candidateModels = [
       modelName,
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
     const tareaGeneracion = (async () => {
@@ -165,7 +171,7 @@ Instrucción: Genera el borrador del informe estructurado en formato JSON enfoca
     })()
 
     const timeoutGuard = new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(null), 6500)
+      const timer = setTimeout(() => resolve(null), 16500)
       if (timer?.unref) timer.unref()
     })
     reporteConTokens = await Promise.race([tareaGeneracion, timeoutGuard])

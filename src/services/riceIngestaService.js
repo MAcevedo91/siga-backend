@@ -33,7 +33,6 @@ const generarEmbeddingTexto = async (texto = '') => {
   }
 
   const candidateModels = [
-    'text-embedding-004',
     'gemini-embedding-001',
   ]
 
@@ -43,7 +42,7 @@ const generarEmbeddingTexto = async (texto = '') => {
         const ai = new GoogleGenAI({
           apiKey,
           httpOptions: {
-            timeout: 3000,
+            timeout: 12000,
             retryOptions: { attempts: 1 },
           },
         })
@@ -66,9 +65,9 @@ const generarEmbeddingTexto = async (texto = '') => {
     return null
   })()
 
-  // Guardrail estricto de 3.5 segundos para no demorar la consulta del usuario
+  // Guardrail de 12.5 segundos acorde al deadline mínimo de 10s de la API de Google
   const timeoutGuard = new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 3500)
+    const timer = setTimeout(() => resolve(null), 12500)
     if (timer?.unref) timer.unref()
   })
 
@@ -81,7 +80,7 @@ const generarEmbeddingTexto = async (texto = '') => {
     logger.warn('Error en carrera de embedding Gemini:', errorRace.message)
   }
 
-  logger.warn('Embedding de Gemini no obtenido en tiempo límite (< 3.5s). Conmutando a vector determinista.')
+  logger.warn('Embedding de Gemini no obtenido en tiempo límite. Conmutando a vector determinista.')
   return generarVectorSimulado(texto)
 }
 

@@ -78,45 +78,66 @@ async function generarAnalisisIA(metricas) {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: 6000,
+        timeout: 15000, // Mínimo permitido por Gemini 3.x API es 10s
         retryOptions: { attempts: 1 },
       },
     })
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+    const deprecatedModels = new Set([
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+    ])
+    const envModel = process.env.GEMINI_MODEL?.trim()
+    const candidateModels = [
+      envModel && !deprecatedModels.has(envModel) ? envModel : null,
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
     const prompt = `Actúa como especialista senior en Convivencia Escolar y analítica directiva en Chile.
-Genera una explicación directiva, pedagógica, formal y rigurosa para cada uno de los gráficos del reporte mensual institucional de la Escuela Coeducacional N° 1 El Salvador, conforme a la Circular N° 482 y el RICE.
+Genera una explicación directiva, pedagógica, formal y rigurosa para cada uno de los gráficos del reporte mensual institucional de convivencia escolar, conforme a la Circular N° 482 y el RICE.
 
 MÉTRICAS CUANTITATIVAS CONSOLIDADAS DEL MES:
 - Total Incidentes este mes: ${metricas.totalIncidentes || 0}
-- Variación vs mes anterior: ${metricas.variacion || 0}%
-- Casos Abiertos / en investigación: ${metricas.abiertos || 0}
-- Estudiantes focalizados / riesgo: ${metricas.estudiantesRiesgo || 0}
+- Variación vs mes anterior: ${metricas.variacion !== null && metricas.variacion !== undefined ? `${metricas.variacion}%` : 'Sin registros mes anterior'}
+- Casos Abiertos (activos sin cerrar): ${metricas.abiertos || 0}
+- Estudiantes en riesgo / focalización prioritaria: ${metricas.estudiantesRiesgo || 0}
 - Distribución por Gravedad: ${JSON.stringify(metricas.distribucionGravedad || {})}
 - Cursos con mayor demanda: ${JSON.stringify(metricas.topCursos || [])}
 - Abordajes registrados: ${JSON.stringify(metricas.tiposAbordaje || [])}
-- Tiempo promedio de resolución: ${metricas.tiempoPromedio || '≤ 7'} días
+- Tiempo promedio de resolución: ${metricas.tiempoPromedio > 0 ? metricas.tiempoPromedio : '≤ 7'} días
 
 Responde estrictamente con el esquema JSON solicitado.`
 
-    const tareaAnalisis = ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: JSON_SCHEMA_ANALISIS,
-        temperature: 0.3,
-      },
-    })
+    const tareaAnalisis = (async () => {
+      let lastErr = null
+      for (const m of candidateModels) {
+        try {
+          const resp = await ai.models.generateContent({
+            model: m,
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: JSON_SCHEMA_ANALISIS,
+              temperature: 0.3,
+            },
+          })
+          if (resp?.text?.trim()) return resp.text.trim()
+        } catch (err) {
+          lastErr = err
+          logger.warn(`Modelo ${m} falló en reporte mensual PDF (${err.message}). Probando alternativo...`)
+        }
+      }
+      throw lastErr || new Error('Respuesta vacía de Gemini API')
+    })()
 
     const timeoutGuard = new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error('Timeout de 7s en reporte IA excedido')), 7000)
+      const timer = setTimeout(() => reject(new Error('Timeout de 16.5s en reporte IA excedido')), 16500)
       if (timer?.unref) timer.unref()
     })
 
-    const response = await Promise.race([tareaAnalisis, timeoutGuard])
-
-    const textoRespuesta = response.text?.trim()
+    const textoRespuesta = await Promise.race([tareaAnalisis, timeoutGuard])
     if (!textoRespuesta) throw new Error('Respuesta vacía de Gemini API')
 
     return JSON.parse(textoRespuesta)

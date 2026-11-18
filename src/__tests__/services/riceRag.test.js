@@ -15,6 +15,9 @@ const {
   consultarRice,
   generarRespuestaFallback,
   generarOrientacionClimaAulaRICE,
+  filtrarChunksRelevantes,
+  limpiarContenidoFragmento,
+  resolverModelosGemini,
 } = require('../../services/riceRagService')
 
 const { supabase } = require('../../utils/db')
@@ -322,6 +325,68 @@ Constituyen faltas graves la reiteración de agresiones verbales o ciberacoso.`
 
       expect(res.modo).toBe('fallback')
       expect(res.motivo_fallback).toBeDefined()
+    })
+
+    test('filtrarChunksRelevantes descarta protocolos ajenos (drogas, suicidio) cuando se consulta por maltrato entre pares', () => {
+      const chunksMixtos = [
+        {
+          articulo: 'Protocolo 1: Acoso Escolar, Maltrato entre Pares y Ciberacoso',
+          seccion: 'CIRCULAR N° 482',
+          contenido: '1. Definición... 2. Contención... 3. Entrevistas... 4. Plan de apoyo... 5. Cierre.',
+          similitud: 0.78,
+          es_normativa_nacional: true,
+        },
+        {
+          articulo: 'Protocolo 4: Afectación de Salud Mental e Ideación Suicida',
+          seccion: 'CIRCULAR N° 482',
+          contenido: 'Acompañamiento continuo y traslado a CESFAM.',
+          similitud: 0.52,
+          es_normativa_nacional: true,
+        },
+        {
+          articulo: 'Protocolo 5: Presencia, Consumo o Microtráfico de Drogas y Alcohol',
+          seccion: 'CIRCULAR N° 482',
+          contenido: 'Hallazgo de sustancias ilícitas y denuncia Ley 20.000.',
+          similitud: 0.49,
+          es_normativa_nacional: true,
+        },
+      ]
+
+      const filtrados = filtrarChunksRelevantes(
+        '¿Cuáles son los 5 pasos obligatorios ante maltrato entre pares?',
+        chunksMixtos
+      )
+
+      expect(filtrados).toHaveLength(1)
+      expect(filtrados[0].articulo).toContain('Maltrato entre Pares')
+    })
+
+    test('limpiarContenidoFragmento conserva protocolos completos de 5 pasos (>900 chars) y remueve numeración huérfana', () => {
+      const protocoloLargo =
+        '1. Definición: ' + 'a'.repeat(300) + '. ' +
+        '2. Contención: ' + 'b'.repeat(300) + '. ' +
+        '3. Entrevistas: ' + 'c'.repeat(300) + '. ' +
+        '4. Medidas: ' + 'd'.repeat(300) + '. ' +
+        '5. Seguimiento y Cierre: acta final firmada.'
+      const limpio = limpiarContenidoFragmento(protocoloLargo)
+      expect(limpio).toContain('5. Seguimiento y Cierre')
+
+      const conHuerfano = '1. Paso uno completo.\n2. Paso dos completo.\n4.'
+      expect(limpiarContenidoFragmento(conHuerfano)).toBe('1. Paso uno completo.\n2. Paso dos completo.')
+    })
+
+    test('resolverModelosGemini ignora modelos retirados (gemini-2.0-flash) y prioriza gemini-3.8-flash', () => {
+      const originalEnv = process.env.GEMINI_MODEL
+      process.env.GEMINI_MODEL = 'gemini-2.0-flash'
+      try {
+        const modelos = resolverModelosGemini()
+        expect(modelos).not.toContain('gemini-2.0-flash')
+        expect(modelos[0]).toBe('gemini-3.8-flash')
+        expect(modelos).toContain('gemini-3.5-flash-lite')
+      } finally {
+        if (originalEnv === undefined) delete process.env.GEMINI_MODEL
+        else process.env.GEMINI_MODEL = originalEnv
+      }
     })
 
     test('generarOrientacionClimaAulaRICE retorna clima favorable inmediato cuando total es 0', async () => {

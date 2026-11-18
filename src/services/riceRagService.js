@@ -5,20 +5,111 @@ const { censurarPatronesPII } = require('./dlpSanitizer')
 const { generarEmbeddingTexto } = require('./riceIngestaService')
 const { registrarAuditoria } = require('./auditoriaService')
 
-const SYSTEM_INSTRUCTION_RAG = `Eres el Asesor Normativo y Especialista en Convivencia Escolar de SIGA Escolar (Chile).
+const DEPRECATED_GEMINI_MODELS = new Set([
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+])
+
+const resolverModelosGemini = () => {
+  const envModel = process.env.GEMINI_MODEL?.trim()
+  const candidates = [
+    envModel && !DEPRECATED_GEMINI_MODELS.has(envModel) ? envModel : null,
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
+  ]
+  return candidates.filter((m, i, arr) => m && arr.indexOf(m) === i)
+}
+
+const STOPWORDS_ES = new Set([
+  'cual', 'cuales', 'como', 'cuando', 'donde', 'quien', 'quienes',
+  'paso', 'pasos', 'obligatorio', 'obligatorios', 'protocolo', 'protocolos',
+  'debo', 'debe', 'deben', 'hacer', 'caso', 'casos', 'para', 'ante', 'sobre',
+  'este', 'esta', 'estos', 'estas', 'unos', 'unas', 'entre', 'contra', 'desde',
+  'hacia', 'hasta', 'segun', 'según', 'tiene', 'tienen', 'plazo', 'plazos',
+  'norma', 'normas', 'rice', 'reglamento', 'escolar', 'escuela', 'colegio',
+  'estudiante', 'estudiantes', 'alumno', 'alumnos', 'frente', 'situacion',
+  'situación', 'medida', 'medidas', 'procedimiento', 'procedimientos',
+])
+
+const normalizarTexto = (txt = '') =>
+  String(txt)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+const extraerTerminosTematicos = (pregunta = '') =>
+  normalizarTexto(pregunta)
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !STOPWORDS_ES.has(w))
+
+/**
+ * Filtra y ordena los chunks recuperados para conservar únicamente los que
+ * realmente guardan pertinencia con la materia consultada, evitando volcar
+ * protocolos ajenos (ej. drogas o ideación suicida cuando se consulta maltrato entre pares).
+ */
+const filtrarChunksRelevantes = (pregunta = '', chunks = [], maxChunks = 3) => {
+  const utiles = (chunks || []).filter((c) => !esChunkDeIndice(c))
+  if (utiles.length <= 1) return utiles
+
+  const terminos = extraerTerminosTematicos(pregunta)
+
+  const puntuados = utiles.map((c, idx) => {
+    const tituloNorm = normalizarTexto(`${c.articulo || ''} ${c.seccion || ''}`)
+    const contenidoNorm = normalizarTexto(c.contenido || '')
+    let coincidenciasTitulo = 0
+    let coincidenciasContenido = 0
+
+    for (const t of terminos) {
+      if (tituloNorm.includes(t)) coincidenciasTitulo++
+      if (contenidoNorm.includes(t)) coincidenciasContenido++
+    }
+
+    const sim = typeof c.similitud === 'number' ? c.similitud : 0.5
+    // Prioridad fuerte a coincidencias en el título/artículo del protocolo
+    const score = sim + coincidenciasTitulo * 0.35 + coincidenciasContenido * 0.08
+    return { chunk: c, idx, sim, coincidenciasTitulo, coincidenciasContenido, score }
+  })
+
+  puntuados.sort((a, b) => b.score - a.score || a.idx - b.idx)
+
+  const mejor = puntuados[0]
+
+  // Si el mejor candidato tiene coincidencia directa en su título/artículo con los términos de la consulta,
+  // conservar únicamente fragmentos que también coincidan temáticamente o estén muy cerca en score.
+  if (mejor.coincidenciasTitulo > 0) {
+    const pertinentes = puntuados.filter((p, i) => {
+      if (i === 0) return true
+      // Exigir coincidencia en título (mismo protocolo / tema) o similitud casi idéntica y coincidencia sustantiva
+      if (p.coincidenciasTitulo > 0) return p.score >= mejor.score - 0.35
+      return p.coincidenciasContenido >= Math.max(2, terminos.length) && p.sim >= mejor.sim - 0.04
+    })
+    return pertinentes.slice(0, maxChunks).map((p) => p.chunk)
+  }
+
+  // Sin coincidencia explícita en título, aplicar ventana relativa sobre la mejor similitud vectorial
+  const maxSim = mejor.sim
+  const filtradosPorSim = puntuados.filter((p, i) => i === 0 || p.sim >= maxSim - 0.08)
+  return filtradosPorSim.slice(0, maxChunks).map((p) => p.chunk)
+}
+
+const SYSTEM_INSTRUCTION_RAG = `Eres Sigi, el Asesor Normativo y Especialista en Convivencia Escolar de SIGA Escolar (Chile).
 Tu propósito es orientar a docentes, directivos e inspectores sobre la aplicación del Reglamento Interno y de Convivencia Escolar (RICE) y la Circular N° 482 de la Superintendencia de Educación.
 
 REGLAS DE ORO OBLIGATORIAS:
-1. FUENTE ESTRICTA Y JERARQUÍA NORMATIVA: Basa tus respuestas en los fragmentos provistos dentro de la etiqueta <contexto_normativo_rice>.
+0. FOCO Y PERTINENCIA ESTRICTA: Responde ÚNICAMENTE sobre la materia, protocolo o duda específica formulada por el funcionario. IGNORA por completo cualquier fragmento de <contexto_normativo_rice> que trate de un tema distinto (por ejemplo, si preguntan por maltrato entre pares, NO menciones protocolos de drogas, ideación suicida ni maltrato de adultos). Entrega TODOS los pasos solicitados de forma completa, ordenada, clara y concisa, sin cortar la respuesta ni agregar información ajena.
+1. FUENTE ESTRICTA Y JERARQUÍA NORMATIVA: Basa tus respuestas estrictamente en los fragmentos pertinentes provistos dentro de la etiqueta <contexto_normativo_rice>.
    - Prioridad Local: Si el RICE del establecimiento cuenta con un artículo o procedimiento para la materia consultada, aplícalo con prioridad.
-   - Subsidiariedad de la Circular N° 482 (Superintendencia de Educación): Si el RICE del establecimiento carece de un protocolo específico, guarda silencio o presenta una laguna sobre la situación consultada (por ejemplo: ciberacoso escolar, ideación suicida, violencia digital, etc.), rige de forma supletoria y obligatoria el protocolo de la Circular N° 482 de la Superintendencia provisto en el contexto. En este caso:
-     * Entrega el procedimiento detallado paso a paso conforme a la Circular N° 482 (medidas de contención inmediata, notificación a apoderados en un plazo máximo de 24 horas, debido proceso y denuncia penal en 24 horas si reviste carácter de delito según Art. 175 letra e del CPP).
-     * Finaliza SIEMPRE indicando con total claridad que, al no contar el RICE del establecimiento con dicho protocolo específico, se aplicó la Circular N° 482 de manera subsidiaria, e incluye una recomendación explícita para que el Encargado/a de Convivencia Escolar y la Dirección actualicen el RICE del colegio incorporando el protocolo obligatorio.
-2. CITAS OBLIGATORIAS: Cita siempre de forma explícita el Artículo y Título/Capítulo correspondiente a cada recomendación o procedimiento, identificando si la fuente es el RICE del establecimiento o la Circular N° 482.
-3. DEBIDO PROCESO Y PLAZOS: Si la consulta involucra una falta o incidente, destaca con precisión los plazos de citación a apoderados (máximo 24 horas), el derecho del estudiante a ser escuchado (descargos), y la gradualidad de medidas formativas antes de cualquier sanción disciplinaria.
-4. CASOS CRÍTICOS (DELITOS): Si la situación describe hechos constitutivos de delito (abuso sexual, porte de armas, drogas, agresiones graves), recuerda la obligación legal de denuncia al Ministerio Público, Carabineros o PDI dentro de las 24 horas siguientes (Art. 175 letra e del Código Procesal Penal).
-5. LIMITACIÓN FACTUAL: Si ni el RICE local ni la Circular N° 482 contienen información suficiente para responder a la consulta, indícalo con total transparencia y recomienda consultar directamente con el Encargado de Convivencia Escolar o la Superintendencia de Educación.
-6. TONO: Institucional, pedagógico, restaurativo, claro y profesional.`
+   - Subsidiariedad de la Circular N° 482 (Superintendencia de Educación): Si el RICE del establecimiento carece de un protocolo específico, guarda silencio o presenta una laguna sobre la situación consultada, rige de forma supletoria y obligatoria el protocolo de la Circular N° 482 de la Superintendencia provisto en el contexto. En este caso:
+     * Entrega el procedimiento completo paso a paso conforme a la Circular N° 482 (medidas de contención inmediata, notificación a apoderados en un plazo máximo de 24 horas, debido proceso y denuncia penal en 24 horas si reviste carácter de delito según Art. 175 letra e del CPP).
+     * Finaliza brevemente señalando que, al no existir protocolo específico en el RICE local, se aplicó la Circular N° 482 de manera subsidiaria, recomendando al equipo directivo incorporarlo en la próxima actualización del RICE.
+2. CITAS OBLIGATORIAS: Cita de forma explícita el Artículo, Protocolo o Sección correspondiente, indicando si la fuente es el RICE del establecimiento o la Circular N° 482.
+3. DEBIDO PROCESO Y PLAZOS: Si la consulta involucra una falta o incidente, destaca con precisión los plazos de citación a apoderados (máximo 24 horas), el derecho del estudiante a ser escuchado (descargos) y la gradualidad formativa.
+4. CASOS CRÍTICOS (DELITOS): Solo si la situación consultada involucra presuntos delitos (abuso sexual, porte de armas, drogas, agresiones graves), recuerda la obligación legal de denuncia dentro de 24 horas (Art. 175 letra e del Código Procesal Penal).
+5. LIMITACIÓN FACTUAL: Si ni el RICE local ni la Circular N° 482 contienen información suficiente para responder a la consulta, indícalo con total transparencia y recomienda consultar con el Encargado de Convivencia Escolar o la Superintendencia de Educación.
+6. TONO: Cercano pero profesional, pedagógico, restaurativo, directo y sin relleno.`
 
 /**
  * Detecta si un fragmento corresponde a páginas de índice, tabla de contenidos
@@ -36,7 +127,7 @@ const esChunkDeIndice = (chunk) => {
 
 /**
  * Limpia y normaliza el texto de un fragmento normativo para evitar cortes abruptos
- * o caracteres huérfanos sin alterar el contenido legal original.
+ * o números de lista huérfanos sin alterar el contenido legal original.
  */
 const limpiarContenidoFragmento = (texto = '') => {
   if (!texto) return ''
@@ -46,26 +137,31 @@ const limpiarContenidoFragmento = (texto = '') => {
     .replace(/\n{3,}/g, '\n\n') // Reducir saltos excesivos
     .trim()
 
-  // Si supera 900 caracteres, recortar respetando el final de una oración completa
-  if (limpio.length > 900) {
-    const corte = limpio.slice(0, 900)
+  // Tope holgado (2400 caracteres) para no amputar protocolos completos de 5 pasos
+  if (limpio.length > 2400) {
+    const corte = limpio.slice(0, 2400)
     const ultimoPunto = corte.lastIndexOf('.')
-    if (ultimoPunto > 400) {
+    if (ultimoPunto > 1200) {
       limpio = corte.slice(0, ultimoPunto + 1)
     } else {
       limpio = corte + '...'
     }
   }
+
+  // Eliminar cualquier numeración huérfana al final tras un recorte (ej. "\n4.")
+  limpio = limpio.replace(/(?:\r?\n|\s)+\d+\.\s*$/, '').trim()
   return limpio
 }
 
 /**
- * Genera una respuesta estructurada de contingencia (fallback) basada en los chunks recuperados
- * cuando la API de Gemini no está disponible o no hay API Key configurada.
+ * Genera una respuesta estructurada de contingencia (fallback) basada únicamente
+ * en los chunks pertinentes recuperados cuando la API de Gemini no está disponible.
  */
 const generarRespuestaFallback = (pregunta, chunks = [], nombreUsuario = null) => {
-  const chunksValidos = (chunks || []).filter((c) => !esChunkDeIndice(c))
-  const chunksAProcesar = chunksValidos.length > 0 ? chunksValidos : chunks
+  const chunksRelevantes = filtrarChunksRelevantes(pregunta, chunks, 2)
+  const chunksAProcesar = chunksRelevantes.length > 0
+    ? chunksRelevantes
+    : (chunks || []).slice(0, 1)
 
   const vocativo = nombreUsuario ? `Estimado/a ${nombreUsuario}` : 'Estimado/a funcionario/a'
 
@@ -76,10 +172,10 @@ const generarRespuestaFallback = (pregunta, chunks = [], nombreUsuario = null) =
   const tieneNormativaNacional = chunksAProcesar.some((c) => Boolean(c.es_normativa_nacional || c.tenant_id === null))
   const tieneNormativaLocal = chunksAProcesar.some((c) => !c.es_normativa_nacional && c.tenant_id !== null)
 
-  let encabezado = `${vocativo}:\n\nA continuación, se detalla el procedimiento y las directrices normativas identificadas en el **Reglamento Interno y de Convivencia Escolar (RICE)** de la Escuela Coeducacional N° 1 El Salvador para orientar su actuación:`
+  let encabezado = `${vocativo}:\n\nA continuación, se detalla el procedimiento y las directrices normativas identificadas en el **Reglamento Interno y de Convivencia Escolar (RICE)** del establecimiento para orientar su actuación:`
 
   if (tieneNormativaNacional && !tieneNormativaLocal) {
-    encabezado = `${vocativo}:\n\nDado que en el RICE del establecimiento no se visualiza un protocolo específico para esta materia, **se aplica de forma supletoria y obligatoria la Circular N° 482 de la Superintendencia de Educación**, la cual fija los estándares mínimos de convivencia escolar a nivel nacional:`
+    encabezado = `${vocativo}:\n\nDado que en el RICE del establecimiento no se visualiza un protocolo específico para esta materia, **se aplica de forma supletoria y obligatoria la Circular N° 482 de la Superintendencia de Educación**:`
   }
 
   const detalleArticulos = chunksAProcesar
@@ -90,17 +186,16 @@ const generarRespuestaFallback = (pregunta, chunks = [], nombreUsuario = null) =
       const seccion = c.seccion ? ` (${c.seccion})` : ''
       const textoLimpio = limpiarContenidoFragmento(c.contenido)
 
-      return `### ${idx + 1}. ${tituloArticulo} [${origen}]${seccion}\n\n${textoLimpio}`
+      return `### ${tituloArticulo} [${origen}]${seccion}\n\n${textoLimpio}`
     })
     .join('\n\n---\n\n')
 
-  let recomendacionesGenerales = `\n\n### Consideraciones Clave del Debido Proceso Escolar:
-• **Plazos de Notificación:** Citar e informar a los apoderados en un plazo máximo de **24 horas** desde que se toma conocimiento de la situación.
-• **Derecho a ser Escuchado:** Realizar entrevistas individuales garantizando el derecho a descargos de los estudiantes, evitando confrontaciones directas entre las partes.
-• **Obligación Legal de Denuncia:** Si la situación reviste carácter de presunto delito (agresiones graves, abuso sexual, porte de armas), la Dirección tiene el deber de denunciar ante Carabineros, PDI o Fiscalía dentro de las **24 horas siguientes** (Art. 175 letra e del Código Procesal Penal).`
+  let recomendacionesGenerales = `\n\n### Recordatorio de Debido Proceso:
+• **Notificación a Apoderados:** Citar e informar en un plazo máximo de **24 horas**.
+• **Derecho a ser Escuchado:** Realizar entrevistas individuales sin confrontaciones directas entre estudiantes.`
 
   if (tieneNormativaNacional && !tieneNormativaLocal) {
-    recomendacionesGenerales += `\n\n***\n\n> ⚠️ **Recomendación de Gestión Institucional:** Al haberse aplicado la **Circular N° 482 de manera subsidiaria**, se sugiere expresamente al Encargado/a de Convivencia Escolar y al Equipo Directivo actualizar el RICE del establecimiento incorporando formalmente este protocolo obligatorio para asegurar el debido proceso local.`
+    recomendacionesGenerales += `\n\n> ⚠️ **Recomendación de Gestión Institucional:** Al haberse aplicado la **Circular N° 482 de manera subsidiaria**, se sugiere al equipo directivo actualizar el RICE del establecimiento incorporando formalmente este protocolo obligatorio.`
   }
 
   return `${encabezado}\n\n${detalleArticulos}${recomendacionesGenerales}`
@@ -167,18 +262,13 @@ const consultarRice = async ({
     logger.error('Error de base de datos en recuperación de contexto RICE:', dbErr)
   }
 
-  // 3.1 Filtrar fragmentos que correspondan a páginas de índice o tablas de contenidos
-  const chunksUtiles = chunksRecuperados.filter((c) => !esChunkDeIndice(c))
-  chunksRecuperados = chunksUtiles.slice(0, 4)
+  // 3.1 Filtrar índices y descartar protocolos ajenos a la consulta (foco estricto)
+  chunksRecuperados = filtrarChunksRelevantes(consultaLimpia, chunksRecuperados, 3)
 
   // 3.2 Búsqueda de rescate híbrida (léxica): Si la similitud vectorial no trajo chunks útiles, buscar coincidencias léxicas sustantivas
   if (chunksRecuperados.length === 0) {
     try {
-      const palabrasClave = consultaLimpia
-        .toLowerCase()
-        .replace(/[¿?¡!.,;:()]/g, '')
-        .split(/\s+/)
-        .filter((w) => w.length > 3 && !['cual', 'cuales', 'como', 'pasos', 'debo', 'hacer', 'caso', 'para', 'ante', 'sobre', 'este', 'esta', 'estos'].includes(w))
+      const palabrasClave = extraerTerminosTematicos(consultaLimpia)
 
       if (palabrasClave.length > 0) {
         logger.info(`Búsqueda vectorial sin resultados útiles, ejecutando rescate léxico con términos: ${palabrasClave.join(', ')}`)
@@ -196,11 +286,15 @@ const consultarRice = async ({
           const chunksValidos = (chunksTermino || []).filter((c) => !esChunkDeIndice(c))
 
           if (chunksValidos.length > 0) {
-            chunksRecuperados = chunksValidos.slice(0, 4).map((c) => ({
-              ...c,
-              similitud: 0.85,
-              es_normativa_nacional: c.tenant_id === null,
-            }))
+            chunksRecuperados = filtrarChunksRelevantes(
+              consultaLimpia,
+              chunksValidos.map((c) => ({
+                ...c,
+                similitud: 0.85,
+                es_normativa_nacional: c.tenant_id === null,
+              })),
+              3
+            )
             logger.info(`Rescate léxico exitoso: ${chunksRecuperados.length} fragmentos sustantivos recuperados para "${termino}"`)
             break
           }
@@ -211,9 +305,8 @@ const consultarRice = async ({
     }
   }
 
-  // 4. Inferencia con Google Gemini Flash
+  // 4. Inferencia con Google Gemini Flash (modelos vigentes y timeout >= 10s requerido por Google API)
   const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
   let respuestaFinal = ''
   let modoEjecucion = 'ia_gemini'
   let motivoFallback = null
@@ -232,8 +325,8 @@ const consultarRice = async ({
       const ai = new GoogleGenAI({
         apiKey,
         httpOptions: {
-          timeout: 4500, // Timeout estricto de 4.5 segundos por intento
-          retryOptions: { attempts: 1 }, // 1 intento, sin reintentos lentos que causen minutos de espera
+          timeout: 15000, // Mínimo permitido por Gemini 3.x API es 10s
+          retryOptions: { attempts: 1 },
         },
       })
 
@@ -256,16 +349,10 @@ ${nombreUsuario ? `\nFUNCIONARIO CONSULTANTE:\n"${nombreUsuario}" (salúdalo ama
 CONSULTA DEL FUNCIONARIO:
 "${consultaLimpia}"
 
-Por favor entrega tu orientación conforme a las reglas del sistema, citando los artículos aplicables.
+Responde estrictamente a lo consultado (ignorando fragmentos sobre otros temas), entregando todos los pasos completos y citando los artículos o protocolos aplicables.
 `
 
-      const candidateModels = [
-        modelName,
-        'gemini-2.0-flash',
-        'gemini-1.5-flash',
-        'gemini-2.0-flash-lite',
-        'gemini-3.8-flash',
-      ].filter((m, i, arr) => m && arr.indexOf(m) === i)
+      const candidateModels = resolverModelosGemini()
 
       const tareaInferencia = (async () => {
         let errUltimo = null
@@ -290,9 +377,9 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
         return { texto: null, error: errUltimo }
       })()
 
-      // Guardrail de 5.5 segundos para garantizar que el usuario nunca espere más de ese tiempo
+      // Guardrail de 16.5 segundos acorde al deadline mínimo de 10s exigido por Gemini 3.x
       const guardrailTimeout = new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ timeout: true }), 5500)
+        const timer = setTimeout(() => resolve({ timeout: true }), 16500)
         if (timer?.unref) timer.unref()
       })
 
@@ -300,8 +387,8 @@ Por favor entrega tu orientación conforme a las reglas del sistema, citando los
 
       if (resultadoInferencia?.timeout) {
         modoEjecucion = 'fallback'
-        motivoFallback = 'Tiempo de respuesta LLM excedió guardrail de seguridad (5.5s)'
-        logger.warn('[RAG] LLM demoró más de 5.5s. Conmutando a respuesta determinista estructurada inmediata.')
+        motivoFallback = 'Tiempo de respuesta LLM excedió guardrail de seguridad (16.5s)'
+        logger.warn('[RAG] LLM demoró más de 16.5s. Conmutando a respuesta determinista estructurada inmediata.')
         respuestaFinal = generarRespuestaFallback(consultaLimpia, chunksRecuperados, nombreUsuario)
       } else if (resultadoInferencia?.texto) {
         respuestaFinal = resultadoInferencia.texto
@@ -444,7 +531,7 @@ const generarOrientacionClimaAulaRICE = async ({
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: 4000,
+        timeout: 15000,
         retryOptions: { attempts: 1 },
       },
     })
@@ -466,12 +553,7 @@ ${contextoXml}
 
 Entrega la orientación formativa y pedagógica pertinente para el Encargado de Convivencia y el Profesor Jefe fundamentada en el RICE.`
 
-    const candidateModels = [
-      process.env.GEMINI_MODEL,
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite',
-    ].filter((m, i, arr) => m && arr.indexOf(m) === i)
+    const candidateModels = resolverModelosGemini()
 
     const tareaOrientacion = (async () => {
       for (const m of candidateModels) {
@@ -495,7 +577,7 @@ Entrega la orientación formativa y pedagógica pertinente para el Encargado de 
     })()
 
     const timeoutGuard = new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(null), 4500)
+      const timer = setTimeout(() => resolve(null), 16000)
       if (timer?.unref) timer.unref()
     })
     const textoRespuesta = await Promise.race([tareaOrientacion, timeoutGuard])
@@ -523,6 +605,9 @@ Entrega la orientación formativa y pedagógica pertinente para el Encargado de 
 module.exports = {
   SYSTEM_INSTRUCTION_RAG,
   SYSTEM_INSTRUCTION_CLIMA_AULA,
+  resolverModelosGemini,
+  filtrarChunksRelevantes,
+  limpiarContenidoFragmento,
   generarRespuestaFallback,
   consultarRice,
   generarOrientacionClimaAulaRICE,
