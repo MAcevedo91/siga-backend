@@ -6,6 +6,17 @@ const logger = require('../utils/logger')
  * @param {number} ttl - Time to live en segundos
  * @returns {Function} Express middleware
  */
+function buildNormalizedCacheKey(req) {
+  const [pathname, rawQuery] = (req.originalUrl || '').split('?')
+  if (!rawQuery) {
+    return `cache:${req.user.tenant_id}:${pathname}`
+  }
+  const params = new URLSearchParams(rawQuery)
+  params.delete('refresh')
+  const cleanQuery = params.toString()
+  return `cache:${req.user.tenant_id}:${cleanQuery ? `${pathname}?${cleanQuery}` : pathname}`
+}
+
 function cacheMiddleware(ttl = 300) {
   return async (req, res, next) => {
     // Solo cachear GET requests
@@ -13,17 +24,20 @@ function cacheMiddleware(ttl = 300) {
       return next()
     }
 
-    const cacheKey = `cache:${req.user.tenant_id}:${req.originalUrl}`
+    const forceRefresh = req.query?.refresh === 'true'
+    const cacheKey = buildNormalizedCacheKey(req)
 
     try {
-      const cachedData = await redisClient.get(cacheKey)
+      if (!forceRefresh) {
+        const cachedData = await redisClient.get(cacheKey)
 
-      if (cachedData) {
-        logger.debug('Cache HIT', { requestId: req.id, key: cacheKey })
-        return res.json(JSON.parse(cachedData))
+        if (cachedData) {
+          logger.debug('Cache HIT', { requestId: req.id, key: cacheKey })
+          return res.json(JSON.parse(cachedData))
+        }
       }
 
-      logger.debug('Cache MISS', { requestId: req.id, key: cacheKey })
+      logger.debug(forceRefresh ? 'Cache REFRESH' : 'Cache MISS', { requestId: req.id, key: cacheKey })
 
       // Store original json method
       const originalJson = res.json.bind(res)

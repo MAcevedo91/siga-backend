@@ -2,69 +2,102 @@ const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
 const { generarOrientacionClimaAulaRICE } = require('../services/riceRagService')
 const { compilarReporteMensualPDF } = require('../services/reporteMensualPdfService')
+const { getEstudiantesEnRiesgo } = require('../services/dashboardService')
 
-// Helper: Get date range for current and previous month
+// Helper: Formatear fecha local pura YYYY-MM-DD sin desplazamiento UTC
+function formatDateYMD(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// Helper: Normalizar etiquetas de gravedad (legacy 'Gravísimo' -> 'Gravísima')
+function normalizarGravedad(gravedad) {
+  if (gravedad === 'Gravísimo') return 'Gravísima'
+  return gravedad
+}
+
+// Helper: Get date range for current and previous month (formato DATE YYYY-MM-DD)
 function getMonthRanges() {
   const now = new Date()
   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
   const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+  const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
 
   return {
-    currentMonthStart: currentMonthStart.toISOString(),
-    previousMonthStart: previousMonthStart.toISOString(),
-    previousMonthEnd: previousMonthEnd.toISOString()
+    currentMonthStart: formatDateYMD(currentMonthStart),
+    currentMonthEnd: formatDateYMD(currentMonthEnd),
+    previousMonthStart: formatDateYMD(previousMonthStart),
+    previousMonthEnd: formatDateYMD(previousMonthEnd)
   }
 }
 
 async function getResumen(req, res) {
   try {
     const tenantId = req.user.tenant_id
-    const { currentMonthStart, previousMonthStart, previousMonthEnd } = getMonthRanges()
+    const {
+      currentMonthStart,
+      currentMonthEnd,
+      previousMonthStart,
+      previousMonthEnd
+    } = getMonthRanges()
 
     // Total incidentes mes actual
-    const { count: totalIncidentes } = await supabase
+    const { count: totalIncidentesRaw, error: errActual } = await supabase
       .from('incidentes')
       .select('*', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
       .gte('fecha', currentMonthStart)
+      .lte('fecha', currentMonthEnd)
+
+    if (errActual) throw new Error(errActual.message)
+    const totalIncidentes = totalIncidentesRaw || 0
 
     // Total incidentes mes anterior
-    const { count: totalPrevMonth } = await supabase
+    const { count: totalPrevMonthRaw, error: errPrev } = await supabase
       .from('incidentes')
       .select('*', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
       .gte('fecha', previousMonthStart)
       .lte('fecha', previousMonthEnd)
 
-    // Variación porcentual
+    if (errPrev) throw new Error(errPrev.message)
+    const totalPrevMonth = totalPrevMonthRaw || 0
+
+    // Variación porcentual (null cuando no hubo casos en el mes anterior)
     const variacion = totalPrevMonth > 0
       ? Math.round(((totalIncidentes - totalPrevMonth) / totalPrevMonth) * 100)
-      : 0
+      : null
 
-    // Incidentes abiertos
-    const { count: abiertos } = await supabase
+    // Incidentes abiertos (Registrado, En Investigación o Derivado; todo lo que no está Cerrado)
+    const { count: abiertosRaw, error: errAbiertos } = await supabase
       .from('incidentes')
       .select('*', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('estado', 'Abierto')
+      .neq('estado', 'Cerrado')
 
-    // Estudiantes con > 3 incidentes (últimos 3 meses)
-    const threeMonthsAgo = new Date()
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+    if (errAbiertos) throw new Error(errAbiertos.message)
+    const abiertos = abiertosRaw || 0
 
-    const { data: estudiantesData } = await supabase.rpc('contar_estudiantes_con_muchos_incidentes', {
-      p_tenant_id: tenantId,
-      p_fecha_desde: threeMonthsAgo.toISOString(),
-      p_minimo_incidentes: 3
-    })
-
-    const estudiantesRiesgo = estudiantesData || 0
+    // Estudiantes en riesgo calculados con el motor oficial configurable (configuracion_tenant)
+    let estudiantesRiesgo = 0
+    try {
+      const listaRiesgo = await getEstudiantesEnRiesgo(tenantId)
+      estudiantesRiesgo = Array.isArray(listaRiesgo) ? listaRiesgo.length : 0
+    } catch (errRiesgo) {
+      logger.warn('No se pudo calcular estudiantes en riesgo en analytics', {
+        error: errRiesgo.message,
+        tenantId
+      })
+    }
 
     res.json({
       success: true,
       data: {
         totalIncidentes,
+        totalMesAnterior: totalPrevMonth,
         variacion,
         abiertos,
         estudiantesRiesgo
@@ -94,22 +127,27 @@ async function getTendenciaMensual(req, res) {
       .from('incidentes')
       .select('fecha, gravedad')
       .eq('tenant_id', tenantId)
-      .gte('fecha', twelveMonthsAgo.toISOString())
+      .gte('fecha', formatDateYMD(twelveMonthsAgo))
       .order('fecha', { ascending: true })
 
     if (error) throw new Error(error.message)
 
-    // Agrupar por mes y gravedad
+    // Agrupar por mes y gravedad (usando substring YYYY-MM para evitar desfases UTC)
     const monthlyData = {}
-    data.forEach(incidente => {
-      const date = new Date(incidente.fecha)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    ;(data || []).forEach(incidente => {
+      const monthKey = typeof incidente.fecha === 'string' && /^\d{4}-\d{2}/.test(incidente.fecha)
+        ? incidente.fecha.substring(0, 7)
+        : (() => {
+            const d = new Date(incidente.fecha)
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+          })()
 
       if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { mes: monthKey, Leve: 0, Grave: 0, Gravísimo: 0 }
+        monthlyData[monthKey] = { mes: monthKey, Leve: 0, Grave: 0, Gravísima: 0 }
       }
 
-      monthlyData[monthKey][incidente.gravedad] = (monthlyData[monthKey][incidente.gravedad] || 0) + 1
+      const grav = normalizarGravedad(incidente.gravedad)
+      monthlyData[monthKey][grav] = (monthlyData[monthKey][grav] || 0) + 1
     })
 
     const result = Object.values(monthlyData).sort((a, b) => a.mes.localeCompare(b.mes))
@@ -141,13 +179,14 @@ async function getPorGravedad(req, res) {
 
     if (error) throw new Error(error.message)
 
-    // Contar por gravedad
-    const counts = { Leve: 0, Grave: 0, Gravísimo: 0 }
-    data.forEach(incidente => {
-      counts[incidente.gravedad] = (counts[incidente.gravedad] || 0) + 1
+    // Contar por gravedad (unificando a 'Gravísima')
+    const counts = { Leve: 0, Grave: 0, Gravísima: 0 }
+    ;(data || []).forEach(incidente => {
+      const grav = normalizarGravedad(incidente.gravedad)
+      counts[grav] = (counts[grav] || 0) + 1
     })
 
-    const total = data.length
+    const total = (data || []).length
     const result = Object.entries(counts).map(([gravedad, cantidad]) => ({
       gravedad,
       cantidad,

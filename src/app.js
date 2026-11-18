@@ -67,7 +67,19 @@ app.use(apiVersion)
 // =============================================================================
 
 // Parseo de JSON en el body de los requests
-app.use(express.json())
+// Límite global acotado (512kb) contra DoS; la ruta de reporte mensual PDF recibe hasta 4 gráficos PNG en base64 (5mb)
+const defaultJsonParser = express.json({ limit: '512kb' })
+const analyticsPdfJsonParser = express.json({ limit: '5mb' })
+
+app.use((req, res, next) => {
+  if (
+    req.method === 'POST' &&
+    /^\/api(\/v1)?\/analytics\/reporte-mensual-pdf\/?$/.test(req.path)
+  ) {
+    return analyticsPdfJsonParser(req, res, next)
+  }
+  return defaultJsonParser(req, res, next)
+})
 
 // Auditoría — debe ir después de express.json() para leer el body
 // y después de las rutas lo captura via res.json()

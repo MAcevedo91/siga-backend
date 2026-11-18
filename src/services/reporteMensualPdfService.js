@@ -2,6 +2,16 @@ const PDFDocument = require('pdfkit')
 const { GoogleGenAI, Type } = require('@google/genai')
 const { supabase } = require('../utils/db')
 const logger = require('../utils/logger')
+const { getEstudiantesEnRiesgo } = require('./dashboardService')
+
+const MAX_CHART_IMAGE_BYTES = 1.5 * 1024 * 1024 // 1.5 MB máximo por imagen base64
+
+function formatDateYMD(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 
 const JSON_SCHEMA_ANALISIS = {
   type: Type.OBJECT,
@@ -119,67 +129,109 @@ Responde estrictamente con el esquema JSON solicitado.`
 function decodeBase64Image(base64Str) {
   if (!base64Str || typeof base64Str !== 'string') return null
   try {
-    const clean = base64Str.replace(/^data:image\/\w+;base64,/, '')
-    return Buffer.from(clean, 'base64')
+    const match = base64Str.match(/^data:image\/(png|jpeg|jpg);base64,([A-Za-z0-9+/=]+)$/)
+    if (!match) return null
+    const buf = Buffer.from(match[2], 'base64')
+    if (buf.length === 0 || buf.length > MAX_CHART_IMAGE_BYTES) return null
+    return buf
   } catch (e) {
     return null
   }
 }
 
 async function compilarReporteMensualPDF(tenantId, usuario = {}, graficos = {}) {
-  // 1. Recopilar datos cuantitativos desde Supabase
+  // 1. Recopilar datos cuantitativos desde Supabase (alineado 100% con analyticsController)
   const now = new Date()
   const mesActualNombre = now.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-  const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
-  const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString()
+  const startOfMonth = formatDateYMD(new Date(now.getFullYear(), now.getMonth(), 1))
+  const endOfMonth = formatDateYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  const startOfPrevMonth = formatDateYMD(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+  const endOfPrevMonth = formatDateYMD(new Date(now.getFullYear(), now.getMonth(), 0))
 
   // Conteo incidentes mes actual
-  const { count: totalIncidentes } = await supabase
+  const { count: totalIncidentesRaw } = await supabase
     .from('incidentes')
     .select('*', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
     .gte('fecha', startOfMonth)
+    .lte('fecha', endOfMonth)
+
+  const totalIncidentes = totalIncidentesRaw || 0
 
   // Conteo incidentes mes anterior
-  const { count: totalPrevMonth } = await supabase
+  const { count: totalPrevMonthRaw } = await supabase
     .from('incidentes')
     .select('*', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
     .gte('fecha', startOfPrevMonth)
     .lte('fecha', endOfPrevMonth)
 
+  const totalPrevMonth = totalPrevMonthRaw || 0
+
   const variacion = totalPrevMonth > 0
     ? Math.round(((totalIncidentes - totalPrevMonth) / totalPrevMonth) * 100)
-    : 0
+    : null
 
-  // Incidentes abiertos
-  const { count: abiertos } = await supabase
+  // Incidentes abiertos (todo caso no cerrado: Registrado, En Investigación, Derivado)
+  const { count: abiertosRaw } = await supabase
     .from('incidentes')
     .select('*', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
-    .eq('estado', 'En Investigación')
+    .neq('estado', 'Cerrado')
 
-  // Incidentes por gravedad
+  const abiertos = abiertosRaw || 0
+
+  // Incidentes por gravedad del mes actual
   const { data: incidentesGravedad } = await supabase
     .from('incidentes')
     .select('gravedad')
     .eq('tenant_id', tenantId)
     .gte('fecha', startOfMonth)
+    .lte('fecha', endOfMonth)
 
   const distribucionGravedad = { Leve: 0, Grave: 0, Gravísima: 0 }
   ;(incidentesGravedad || []).forEach(inc => {
-    if (distribucionGravedad[inc.gravedad] !== undefined) {
-      distribucionGravedad[inc.gravedad]++
+    const grav = inc.gravedad === 'Gravísimo' ? 'Gravísima' : inc.gravedad
+    if (distribucionGravedad[grav] !== undefined) {
+      distribucionGravedad[grav]++
     }
   })
 
-  // Estudiantes en focalización prioritaria
+  // Tiempo promedio de resolución real (casos cerrados)
+  let tiempoPromedio = 0
+  const { data: cerradosData } = await supabase
+    .from('incidentes')
+    .select('fecha, fecha_cierre')
+    .eq('tenant_id', tenantId)
+    .eq('estado', 'Cerrado')
+    .not('fecha_cierre', 'is', null)
+
+  if (cerradosData && cerradosData.length > 0) {
+    const totalDias = cerradosData.reduce((sum, inc) => {
+      const inicio = new Date(inc.fecha)
+      const cierre = new Date(inc.fecha_cierre)
+      const dias = Math.max(0, Math.ceil((cierre - inicio) / (1000 * 60 * 60 * 24)))
+      return sum + dias
+    }, 0)
+    tiempoPromedio = Math.round(totalDias / cerradosData.length)
+  }
+
+  // Estudiantes en riesgo desde el motor oficial (configuracion_tenant)
+  let estudiantesRiesgoCount = 0
+  try {
+    const listaRiesgo = await getEstudiantesEnRiesgo(tenantId)
+    estudiantesRiesgoCount = Array.isArray(listaRiesgo) ? listaRiesgo.length : 0
+  } catch (errRiesgo) {
+    logger.warn('No se pudo obtener estudiantes en riesgo para reporte PDF:', { error: errRiesgo.message })
+  }
+
+  // Estudiantes en focalización prioritaria (top 5 del mes)
   const { data: incidentesTenant } = await supabase
     .from('incidentes')
     .select('id')
     .eq('tenant_id', tenantId)
     .gte('fecha', startOfMonth)
+    .lte('fecha', endOfMonth)
 
   const incIds = (incidentesTenant || []).map(i => i.id)
   let estudiantesFocalizados = []
@@ -215,12 +267,12 @@ async function compilarReporteMensualPDF(tenantId, usuario = {}, graficos = {}) 
   }
 
   const metricas = {
-    totalIncidentes: totalIncidentes || 0,
+    totalIncidentes,
     variacion,
-    abiertos: abiertos || 0,
-    estudiantesRiesgo: estudiantesFocalizados.length,
+    abiertos,
+    estudiantesRiesgo: estudiantesRiesgoCount,
     distribucionGravedad,
-    tiempoPromedio: 5,
+    tiempoPromedio,
   }
 
   // 2. Generar análisis explicativo con IA
@@ -388,11 +440,15 @@ async function compilarReporteMensualPDF(tenantId, usuario = {}, graficos = {}) 
     const kpiY = doc.y
     const colWidth = (pageWidth - 18) / 4
 
+    const variacionSub = metricas.variacion !== null && metricas.variacion !== undefined
+      ? `${metricas.variacion >= 0 ? '+' : ''}${metricas.variacion}% vs mes ant.`
+      : 'Sin registros mes ant.'
+
     const kpiItems = [
-      { label: 'Incidentes del Mes', val: `${metricas.totalIncidentes}`, sub: `${metricas.variacion >= 0 ? '+' : ''}${metricas.variacion}% vs mes ant.`, col: '#e0e7ff', border: '#818cf8' },
-      { label: 'Casos Abiertos', val: `${metricas.abiertos}`, sub: 'En investigación', col: '#ffedd5', border: '#fb923c' },
+      { label: 'Incidentes del Mes', val: `${metricas.totalIncidentes}`, sub: variacionSub, col: '#e0e7ff', border: '#818cf8' },
+      { label: 'Casos Abiertos', val: `${metricas.abiertos}`, sub: 'Activos sin cerrar', col: '#ffedd5', border: '#fb923c' },
       { label: 'Casos Graves/Grav.', val: `${(distribucionGravedad.Grave || 0) + (distribucionGravedad.Gravísima || 0)}`, sub: 'Con protocolo RICE', col: '#fee2e2', border: '#f87171' },
-      { label: 'Tiempo Resolución', val: '≤ 7 días', sub: 'Meta institucional', col: '#dcfce7', border: '#4ade80' },
+      { label: 'Tiempo Resolución', val: metricas.tiempoPromedio > 0 ? `${metricas.tiempoPromedio} días` : '≤ 7 días', sub: 'Meta: ≤ 7 días', col: '#dcfce7', border: '#4ade80' },
     ]
 
     kpiItems.forEach((k, idx) => {

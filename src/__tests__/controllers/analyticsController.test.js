@@ -1,8 +1,12 @@
 const analyticsController = require('../../controllers/analyticsController')
 const { supabase } = require('../../utils/db')
+const { getEstudiantesEnRiesgo } = require('../../services/dashboardService')
 
 jest.mock('../../utils/db')
 jest.mock('../../utils/logger')
+jest.mock('../../services/dashboardService', () => ({
+  getEstudiantesEnRiesgo: jest.fn(),
+}))
 
 describe('analyticsController', () => {
   let req, res
@@ -21,31 +25,98 @@ describe('analyticsController', () => {
   })
 
   describe('getResumen', () => {
-    it('should return dashboard summary with all metrics', async () => {
-      // Simplified: just verify it's called and structure is correct
-      const mockQuery = {
+    it('should return dashboard summary with real open cases (.neq Cerrado) and risk engine students', async () => {
+      let callNum = 0
+      const mockQueryMesActual = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: 15, error: null })
+      }
+      const mockQueryMesAnterior = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockResolvedValue({ count: 10, error: null })
       }
+      const mockQueryAbiertos = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        neq: jest.fn().mockResolvedValue({ count: 7, error: null })
+      }
 
-      supabase.from = jest.fn().mockReturnValue(mockQuery)
-      supabase.rpc = jest.fn().mockResolvedValue({ data: 5, error: null })
+      supabase.from = jest.fn().mockImplementation(() => {
+        callNum++
+        if (callNum === 1) return mockQueryMesActual
+        if (callNum === 2) return mockQueryMesAnterior
+        return mockQueryAbiertos
+      })
+      getEstudiantesEnRiesgo.mockResolvedValue([{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }])
 
       await analyticsController.getResumen(req, res)
 
-      expect(res.json).toHaveBeenCalled()
-      const callArgs = res.json.mock.calls[0][0]
-      expect(callArgs).toHaveProperty('success')
-      expect(callArgs).toHaveProperty('data')
+      expect(mockQueryAbiertos.neq).toHaveBeenCalledWith('estado', 'Cerrado')
+      expect(getEstudiantesEnRiesgo).toHaveBeenCalledWith(mockTenantId)
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          totalIncidentes: 15,
+          totalMesAnterior: 10,
+          variacion: 50,
+          abiertos: 7,
+          estudiantesRiesgo: 3
+        }
+      })
+    })
+
+    it('should return variacion null when previous month has zero incidents', async () => {
+      let callNum = 0
+      const mockQueryMesActual = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: 6, error: null })
+      }
+      const mockQueryMesAnterior = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: 0, error: null })
+      }
+      const mockQueryAbiertos = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        neq: jest.fn().mockResolvedValue({ count: 4, error: null })
+      }
+
+      supabase.from = jest.fn().mockImplementation(() => {
+        callNum++
+        if (callNum === 1) return mockQueryMesActual
+        if (callNum === 2) return mockQueryMesAnterior
+        return mockQueryAbiertos
+      })
+      getEstudiantesEnRiesgo.mockResolvedValue([])
+
+      await analyticsController.getResumen(req, res)
+
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          totalIncidentes: 6,
+          totalMesAnterior: 0,
+          variacion: null,
+          abiertos: 4,
+          estudiantesRiesgo: 0
+        }
+      })
     })
 
     it('should handle database errors gracefully', async () => {
       const mockCountQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockResolvedValue({ count: null, error: { message: 'DB Error' } })
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: null, error: { message: 'DB Error' } })
       }
 
       supabase.from = jest.fn().mockReturnValue(mockCountQuery)
@@ -61,12 +132,12 @@ describe('analyticsController', () => {
   })
 
   describe('getTendenciaMensual', () => {
-    it('should return monthly trend grouped by severity', async () => {
+    it('should return monthly trend grouped by severity using Gravísima without UTC month shift', async () => {
       const mockData = [
-        { fecha: '2024-01-15', gravedad: 'Leve' },
+        { fecha: '2024-01-01', gravedad: 'Leve' },
         { fecha: '2024-01-20', gravedad: 'Grave' },
         { fecha: '2024-02-05', gravedad: 'Leve' },
-        { fecha: '2024-02-10', gravedad: 'Leve' }
+        { fecha: '2024-02-10', gravedad: 'Gravísima' }
       ]
 
       const mockQuery = {
@@ -87,13 +158,13 @@ describe('analyticsController', () => {
             mes: '2024-01',
             Leve: 1,
             Grave: 1,
-            Gravísimo: 0
+            Gravísima: 0
           }),
           expect.objectContaining({
             mes: '2024-02',
-            Leve: 2,
+            Leve: 1,
             Grave: 0,
-            Gravísimo: 0
+            Gravísima: 1
           })
         ])
       })
@@ -138,7 +209,7 @@ describe('analyticsController', () => {
   })
 
   describe('getPorGravedad', () => {
-    it('should return distribution by severity with percentages', async () => {
+    it('should return distribution by severity unifying legacy Gravísimo into Gravísima', async () => {
       const mockData = [
         { gravedad: 'Leve' },
         { gravedad: 'Leve' },
@@ -157,11 +228,11 @@ describe('analyticsController', () => {
 
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: expect.arrayContaining([
+        data: [
           { gravedad: 'Leve', cantidad: 2, porcentaje: 50 },
           { gravedad: 'Grave', cantidad: 1, porcentaje: 25 },
-          { gravedad: 'Gravísimo', cantidad: 1, porcentaje: 25 }
-        ])
+          { gravedad: 'Gravísima', cantidad: 1, porcentaje: 25 }
+        ]
       })
     })
 
@@ -177,11 +248,11 @@ describe('analyticsController', () => {
 
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: expect.arrayContaining([
+        data: [
           { gravedad: 'Leve', cantidad: 0, porcentaje: 0 },
           { gravedad: 'Grave', cantidad: 0, porcentaje: 0 },
-          { gravedad: 'Gravísimo', cantidad: 0, porcentaje: 0 }
-        ])
+          { gravedad: 'Gravísima', cantidad: 0, porcentaje: 0 }
+        ]
       })
     })
   })
