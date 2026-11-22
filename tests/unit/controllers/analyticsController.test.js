@@ -9,6 +9,10 @@ jest.mock('../../../src/services/reporteMensualPdfService', () => ({
   compilarReporteMensualPDF: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4 test pdf buffer'))
 }))
 
+jest.mock('../../../src/services/dashboardService', () => ({
+  getEstudiantesEnRiesgo: jest.fn().mockResolvedValue([1, 2, 3, 4, 5])
+}))
+
 const { supabase } = require('../../../src/utils/db')
 const { compilarReporteMensualPDF } = require('../../../src/services/reporteMensualPdfService')
 const analyticsController = require('../../../src/controllers/analyticsController')
@@ -36,7 +40,8 @@ describe('Analytics Controller', () => {
       // Create separate chains for each query
       const mockChain1 = {
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockResolvedValue({ count: 42, error: null })
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: 42, error: null })
       }
 
       const mockChain2 = {
@@ -46,10 +51,9 @@ describe('Analytics Controller', () => {
       }
 
       const mockChain3 = {
-        eq: jest.fn().mockReturnThis()
+        eq: jest.fn().mockReturnThis(),
+        neq: jest.fn().mockResolvedValue({ count: 10, error: null })
       }
-      // Second eq() call returns the final promise
-      mockChain3.eq.mockReturnValueOnce(mockChain3).mockResolvedValueOnce({ count: 10, error: null })
 
       supabase.from
         .mockReturnValueOnce({ select: jest.fn().mockReturnValue(mockChain1) })  // totalIncidentes
@@ -76,7 +80,8 @@ describe('Analytics Controller', () => {
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockRejectedValue(new Error('DB error'))
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({ count: null, error: { message: 'DB error' } })
       }
 
       supabase.from.mockReturnValue(mockChain)

@@ -17,6 +17,7 @@ const {
   calcularHashActaCitacion,
 } = require('./pdfCitacionActaService')
 const { despacharActaOficialCitacion } = require('./emailServiceCitacion')
+const { despacharEventoCitacionCreada } = require('./webhookDispatcherService')
 
 // Ventana de bloqueo por traslape horario: 45 minutos
 const VENTANA_TRASLAPE_MINUTOS = 45
@@ -107,7 +108,7 @@ const crearCitacion = async (tenantId, docenteId, body) => {
   // 2. Validar pertenencia del estudiante y apoderado al tenant
   const { data: estudiante, error: estError } = await supabase
     .from('estudiantes')
-    .select('id, nombre, apellido, rut')
+    .select('id, nombre, apellido, rut, cursos(nombre)')
     .eq('id', estudiante_id)
     .eq('tenant_id', tenantId)
     .single()
@@ -231,6 +232,41 @@ const crearCitacion = async (tenantId, docenteId, body) => {
     } catch (mailErr) {
       logger.warn('Advertencia: No se pudo enviar el email de citación al apoderado:', mailErr.message)
     }
+  }
+
+  // 5.1 Despachar evento seguro a N8N para automatización multicanal (WhatsApp / Recordatorio)
+  try {
+    const cursoNombre = estudiante?.cursos ? estudiante.cursos.nombre : null
+    const docenteNombre = docenteInfo?.nombre
+      ? `${docenteInfo.nombre} ${docenteInfo.apellido || ''}`.trim()
+      : 'Docente Convocante'
+
+    await despacharEventoCitacionCreada({
+      folio: citacion.folio,
+      estudiante: {
+        nombre: estudiante.nombre,
+        apellido: estudiante.apellido,
+        curso: cursoNombre,
+      },
+      apoderado: {
+        nombre: apoderado.nombre,
+        apellido: apoderado.apellido,
+        email: apoderado.email,
+        telefono: apoderado.telefono,
+      },
+      docente: {
+        nombre: docenteNombre,
+        email: docenteInfo?.email || null,
+      },
+      fecha_hora_programada,
+      lugar_entrevista,
+      modalidad,
+      enlace_virtual,
+      token_confirmacion: citacion.token_confirmacion,
+      token_expira_at: citacion.token_expira_at,
+    })
+  } catch (n8nErr) {
+    logger.warn('Advertencia: Falló despacho a N8N de citación creada:', n8nErr.message)
   }
 
   // 6. Registro de auditoría

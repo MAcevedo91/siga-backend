@@ -1,0 +1,195 @@
+{
+  "name": "SIGA Escolar — Despacho Multicanal y Recordatorio de Citaciones",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "siga-citacion-creada",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "node-webhook-siga",
+      "name": "Webhook SIGA (Citacion Creada)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Obtener Headers y Payload\nconst headers = $input.item.json.headers || {};\nconst rawBody = $input.item.json.rawBody || JSON.stringify($input.item.json.body || {});\nconst body = typeof $input.item.json.body === 'object' ? $input.item.json.body : JSON.parse(rawBody);\n\n// 2. Clave secreta (debe coincidir con N8N_WEBHOOK_SECRET en .env de SIGA)\nconst webhookSecret = $env.N8N_WEBHOOK_SECRET || 'your-secure-webhook-secret-key-32-chars';\nconst receivedSignature = headers['x-siga-signature'] || '';\nconst timestamp = headers['x-siga-timestamp'] || '';\n\n// 3. Validación Criptográfica HMAC-SHA256\nconst crypto = require('crypto');\nlet esFirmaValida = false;\n\nif (receivedSignature && timestamp) {\n  const dataParaFirmar = `${timestamp}.${rawBody}`;\n  const firmaCalculada = crypto.createHmac('sha256', webhookSecret).update(dataParaFirmar).digest('hex');\n  \n  try {\n    esFirmaValida = crypto.timingSafeEqual(\n      Buffer.from(receivedSignature, 'hex'),\n      Buffer.from(firmaCalculada, 'hex')\n    );\n  } catch (e) {\n    esFirmaValida = false;\n  }\n} else {\n  // Si no se configuró firma en desarrollo local\n  esFirmaValida = true;\n}\n\n// 4. Normalización de Datos y Cumplimiento DLP Escolar\nconst citacion = body.data || {};\nconst apoderado = citacion.apoderado || {};\nconst estudiante = citacion.estudiante || {};\nconst docente = citacion.docente || {};\n\n// Normalizar teléfono celular chileno a formato internacional E.164\nlet rawTelefono = (apoderado.telefono || '').replace(/\\D/g, '');\nif (rawTelefono.length === 9 && rawTelefono.startsWith('9')) {\n  rawTelefono = '56' + rawTelefono;\n} else if (rawTelefono.length === 8) {\n  rawTelefono = '569' + rawTelefono;\n}\nconst telefonoE164 = rawTelefono ? '+' + rawTelefono : null;\n\n// Formatear Fecha y Hora en Español\nconst fechaObj = new Date(citacion.fecha_hora_programada);\nconst fechaStr = fechaObj.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });\nconst horaStr = fechaObj.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });\n\n// Generar contenido de evento de calendario (.ics)\nconst fechaFinObj = new Date(fechaObj.getTime() + 45 * 60 * 1000); // 45 minutos\nconst formatICSDate = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';\n\nconst icsContent = [\n  'BEGIN:VCALENDAR',\n  'VERSION:2.0',\n  'PRODID:-//SIGA Escolar//Citaciones Formativas//ES',\n  'CALSCALE:GREGORIAN',\n  'METHOD:REQUEST',\n  'BEGIN:VEVENT',\n  `UID:citacion-${citacion.folio || Date.now()}@sigaescolar.cl`,\n  `DTSTAMP:${formatICSDate(new Date())}`,\n  `DTSTART:${formatICSDate(fechaObj)}`,\n  `DTEND:${formatICSDate(fechaFinObj)}`,\n  `SUMMARY:Citación Formativa: ${estudiante.nombre || 'Estudiante'} - Escuela El Salvador`,\n  `DESCRIPTION:Entrevista de colaboración pedagógica convocada por ${docente.nombre}. Confirme asistencia en: ${citacion.enlace_confirmacion}`,\n  `LOCATION:${citacion.lugar_entrevista || 'Escuela El Salvador'}`,\n  'STATUS:CONFIRMED',\n  'BEGIN:VALARM',\n  'TRIGGER:-PT24H',\n  'ACTION:DISPLAY',\n  'DESCRIPTION:Recordatorio de Citación Escolar',\n  'END:VALARM',\n  'END:VEVENT',\n  'END:VCALENDAR'\n].join('\\r\\n');\n\n// Mensaje para WhatsApp\nconst mensajeWhatsApp = `🏛️ *Escuela Coeducacional N° 1 El Salvador*\n*Convocatoria a Entrevista Formativa*\n\nEstimado/a *${apoderado.nombre} ${apoderado.apellido}*,\n\nSe le invita a una entrevista de colaboración formativa respecto a su pupilo/a *${estudiante.nombre} ${estudiante.apellido}* (${estudiante.curso || 'Curso Regular'}).\n\n📅 *Fecha:* ${fechaStr}\n⏰ *Hora:* ${horaStr} hrs.\n📍 *Lugar:* ${citacion.lugar_entrevista || 'Sala de Entrevistas'}\n👤 *Convoca:* ${docente.nombre}\n📋 *Folio:* ${citacion.folio}\n\nPor favor, confirme su asistencia o solicite reprogramación en 1 clic desde su celular:\n👉 ${citacion.enlace_confirmacion}\n\n_(Enlace válido por 72 horas · Sistema Oficial SIGA Escolar)_`;\n\n// Mensaje de Recordatorio T-24h\nconst mensajeRecordatorio = `⏰ *Recordatorio de Citación — Escuela El Salvador*\n\nEstimado/a *${apoderado.nombre}*:\nLe recordamos que mañana *${fechaStr}* a las *${horaStr} hrs* tiene programada su entrevista formativa respecto a *${estudiante.nombre}* en ${citacion.lugar_entrevista}.\n\nSi aún no confirma o requiere justificar inasistencia, puede hacerlo aquí:\n👉 ${citacion.enlace_confirmacion}`;\n\n// Cálculo de fecha de recordatorio (24h antes)\nconst fechaRecordatorio = new Date(fechaObj.getTime() - 24 * 60 * 60 * 1000).toISOString();\n\nreturn {\n  json: {\n    esFirmaValida,\n    folio: citacion.folio,\n    telefonoE164,\n    apoderadoEmail: apoderado.email,\n    apoderadoNombre: apoderado.nombre,\n    estudianteNombre: estudiante.nombre,\n    fechaHoraProgramada: citacion.fecha_hora_programada,\n    fechaRecordatorio,\n    enlaceConfirmacion: citacion.enlace_confirmacion,\n    mensajeWhatsApp,\n    mensajeRecordatorio,\n    icsBase64: Buffer.from(icsContent).toString('base64'),\n    icsFileName: `citacion-${citacion.folio || 'escolar'}.ics`\n  }\n};"
+      },
+      "id": "node-code-dlp",
+      "name": "DLP & Formato Criptográfico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.esFirmaValida }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-valid",
+      "name": "¿Firma Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/v17.0/YOUR_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{ $json.telefonoE164 }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"preview_url\": true,\n    \"body\": \"{{ $json.mensajeWhatsApp }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-whatsapp-cloud",
+      "name": "Enviar WhatsApp (Meta Cloud API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "citaciones@escuelaelsalvador.cl",
+        "toEmail": "={{ $json.apoderadoEmail }}",
+        "subject": "=[SIGA Escolar] Convocatoria a Citación Formativa — {{ $json.estudianteNombre }}",
+        "emailFormat": "html",
+        "html": "=<h2>Convocatoria a Citación Formativa</h2><p>Estimado/a apoderado/a, adjuntamos la invitación a su calendario con la cita programada.</p><p><a href=\"{{ $json.enlaceConfirmacion }}\">Haga clic aquí para confirmar o justificar asistencia</a></p>",
+        "options": {
+          "attachments": "=[{\"fileName\": \"{{ $json.icsFileName }}\", \"data\": \"{{ $json.icsBase64 }}\", \"mimeType\": \"text/calendar\"}]"
+        }
+      },
+      "id": "node-send-email",
+      "name": "Enviar Email con ICS",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "={{ $json.fechaRecordatorio }}"
+      },
+      "id": "node-wait-24h",
+      "name": "Esperar hasta T-24h",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/v17.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.telefonoE164 }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.mensajeRecordatorio }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-whatsapp-recordatorio",
+      "name": "WhatsApp Recordatorio (T-24h)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook SIGA (Citacion Creada)": {
+      "main": [
+        [
+          {
+            "node": "DLP & Formato Criptográfico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DLP & Formato Criptográfico": {
+      "main": [
+        [
+          {
+            "node": "¿Firma Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma Válida?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (Meta Cloud API)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Email con ICS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Esperar hasta T-24h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar hasta T-24h": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Recordatorio (T-24h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
