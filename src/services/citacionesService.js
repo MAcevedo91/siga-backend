@@ -473,6 +473,27 @@ const responderCitacionPublica = async (body) => {
     logger.warn('Advertencia: Falló auditoría de respuesta a citación:', auditErr.message)
   }
 
+  // 5.1 Emisión en tiempo real vía WebSockets a la sala del tenant escolar
+  try {
+    const { getIO } = require('../sockets')
+    const io = getIO()
+    if (io) {
+      io.to(`tenant-${citacion.tenant_id}`).emit('citacion:estado_actualizado', {
+        citacionId: citacion.id,
+        folio: citacion.folio,
+        nuevoEstado,
+        fecha_respuesta_apoderado: updatePayload.fecha_respuesta_apoderado,
+        comentario_apoderado: updatePayload.comentario_apoderado,
+        nueva_fecha_solicitada: updatePayload.nueva_fecha_solicitada,
+      })
+      logger.info(
+        `Evento citacion:estado_actualizado emitido a sala tenant-${citacion.tenant_id} (Folio: ${citacion.folio}, Nuevo Estado: ${nuevoEstado})`
+      )
+    }
+  } catch (sockErr) {
+    logger.warn('Advertencia: No se pudo emitir evento citacion:estado_actualizado por socket:', sockErr.message)
+  }
+
   // 6. Notificación en tiempo real al docente o funcionario citador
   try {
     const notificacionesService = require('./notificacionesService')

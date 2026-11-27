@@ -154,8 +154,17 @@ const despacharEventoCitacionCreada = async ({
   token_confirmacion,
   token_expira_at,
 }) => {
-  const isEnabled = process.env.N8N_WEBHOOK_ENABLED === 'true'
-  const webhookUrl = process.env.N8N_WEBHOOK_CITACIONES_URL
+  const rawEnabled = String(process.env.N8N_WEBHOOK_ENABLED ?? process.env.N8N_WEBHOOK_ENABLE ?? 'true')
+    .replace(/['"]/g, '')
+    .trim()
+    .toLowerCase()
+  const isEnabled = rawEnabled !== 'false'
+  const webhookUrl = (
+    process.env.N8N_WEBHOOK_CITACIONES_URL ||
+    'https://sigaescolar.app.n8n.cloud/webhook/siga-citacion-creada'
+  )
+    .replace(/['"]/g, '')
+    .trim()
   const webhookSecret = process.env.N8N_WEBHOOK_SECRET
 
   if (!isEnabled || !webhookUrl) {
@@ -163,8 +172,15 @@ const despacharEventoCitacionCreada = async ({
     return false
   }
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+  const frontendUrl = (
+    process.env.FRONTEND_URL ||
+    'https://siga-frontend-delta-six.vercel.app'
+  )
+    .replace(/['"]/g, '')
+    .trim()
   const enlaceConfirmacion = `${frontendUrl}/citaciones/confirmacion/${token_confirmacion}`
+
+  logger.info(`Despachando evento N8N (citacion.creada) hacia ${webhookUrl} para folio ${folio}`)
 
   // Payload Sanitizado con cumplimiento DLP Escolar
   const payloadDLP = {
