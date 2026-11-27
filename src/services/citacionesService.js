@@ -203,13 +203,16 @@ const crearCitacion = async (tenantId, docenteId, body) => {
       const fromName = `${docenteNombre} (vía SIGA Escolar)`
       const replyTo = docenteInfo?.email || undefined
 
-      await emailService.enviarEmail({
-        to: apoderado.email,
-        cc: docenteInfo?.email || undefined,
-        fromName,
-        replyTo,
-        subject: `[SIGA Escolar] Convocatoria a Entrevista Formativa — ${estudiante.nombre} ${estudiante.apellido}`,
-        html: `
+      // Encolado asíncrono no bloqueante: se envía en segundo plano para no congelar
+      // la respuesta HTTP en caso de indisponibilidad temporal de Redis en producción
+      emailService
+        .enviarEmail({
+          to: apoderado.email,
+          cc: docenteInfo?.email || undefined,
+          fromName,
+          replyTo,
+          subject: `[SIGA Escolar] Convocatoria a Entrevista Formativa — ${estudiante.nombre} ${estudiante.apellido}`,
+          html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
             <h2 style="color: #1e293b; margin-top: 0;">Convocatoria a Citación Formativa</h2>
             <p>Estimado/a <strong>${apoderado.nombre} ${apoderado.apellido}</strong>,</p>
@@ -227,8 +230,14 @@ const crearCitacion = async (tenantId, docenteId, body) => {
             <p style="color: #64748b; font-size: 12px;">Escuela Coeducacional N° 1 El Salvador · Sistema SIGA Escolar</p>
           </div>
         `,
-        text: `Convocatoria a citación formativa para ${estudiante.nombre}. Ingrese a: ${enlaceMovil}`,
-      })
+          text: `Convocatoria a citación formativa para ${estudiante.nombre}. Ingrese a: ${enlaceMovil}`,
+        })
+        .catch((mailErr) => {
+          logger.warn(
+            'Advertencia: No se pudo encolar el email local de citación en Redis:',
+            mailErr.message
+          )
+        })
     } catch (mailErr) {
       logger.warn('Advertencia: No se pudo enviar el email de citación al apoderado:', mailErr.message)
     }
